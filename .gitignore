@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+
+# Mintry Local Data
+.mintry/
+vouchers.db
+vouchers.db-wal
+vouchers.db-shm
+
+# Environment
+.env

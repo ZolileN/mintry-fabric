@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mintry-fabric"
+version = "0.1.0"
+description = "Universal Logic Fabric for the Agentic Economy"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "httpx",
+    "pydantic",
+    "cryptography",
+    "sqlite-utils",
+    "openai",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-httpx>=0.36.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mintry"]
+
+[tool.uv]
+managed = true
+package = true
