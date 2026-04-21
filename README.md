@@ -1,3 +1,4 @@
+![Logic Fabric CI](https://github.com/ZolileN/mintry-fabric/actions/workflows/tests.yml/badge.svg)
 # Mintry Fabric 🚀
 
 **Mintry Fabric** is a high-performance, real-time AI metering and policy enforcement layer designed for the 2026 AI ecosystem. It acts as a "Logic Fabric" that sits between your AI agents and their LLM providers, ensuring fiscal responsibility through granular budget mandates and SQLite-backed usage tracking.

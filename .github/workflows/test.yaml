@@ -1,0 +1,33 @@
+name: Logic Fabric CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Metering Tests
+    # Using Ubuntu Latest for the 2026 standard runner
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          # Use the version that supports Python 3.14
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install Dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run Metering Tests
+        # We use -s to see the "Logic Fabric Hooked" logs in the CI output
+        run: uv run pytest -s tests/test_metering.py
