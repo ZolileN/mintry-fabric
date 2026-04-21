@@ -1,4 +1,3 @@
-# tests/test_mpp_bridge.py
 import mintry
 from decimal import Decimal
 from openai import OpenAI, AuthenticationError, APIConnectionError
