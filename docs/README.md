@@ -1,50 +1,36 @@
-# Mintry Fabric — Documentation
+# Mintry Fabric Documentation
 
-Welcome to the Mintry Fabric documentation. Use the index below to find what you need.
-
----
+This documentation set is aligned to the current code in `src/mintry`.
 
 ## Getting Started
 
 | Document | Description |
 |---|---|
-| [Run Locally](RUN_LOCAL.md) | Step-by-step local setup for the CLI, dashboard, smoke testing, and pytest |
-| [Developer Guide](DEVELOPER_GUIDE.md) | End-to-end workflow: onboarding, integration, mandate lifecycle, and architecture overview |
-| [Configuration Reference](CONFIGURATION.md) | Environment variables, database path, SQLite settings, intent filter, and token pricing |
-| [API Reference](API_REFERENCE.md) | Full reference for every public class and method (`mintry.init`, `MintryWallet`, `PolicyEngine`, `GlobalHTTPInterceptor`) |
-
----
+| [Run Locally](RUN_LOCAL.md) | Local setup, dashboard startup, CLI usage, and test commands |
+| [Developer Guide](DEVELOPER_GUIDE.md) | End-to-end architecture and workflow through the SDK and dashboard |
+| [Configuration Reference](CONFIGURATION.md) | Supported init parameters, environment variables, SQLite behaviour, pricing, and safety defaults |
+| [API Reference](API_REFERENCE.md) | Current Python API surface implemented by the repo |
 
 ## Operations
 
 | Document | Description |
 |---|---|
-| [Troubleshooting](TROUBLESHOOTING.md) | Common errors with root causes and step-by-step fixes |
-| [Roadmap](ROADMAP.md) | Planned features and milestones from v0.1.1 through v1.0.0 |
+| [Troubleshooting](TROUBLESHOOTING.md) | Common local setup and runtime issues |
+| [Roadmap](ROADMAP.md) | What is implemented now and what still blocks `v1.0.0` |
+| [Sprint Plan](SPRINT_PLAN.md) | Current planning snapshot and next release priorities |
 
----
-
-## Engineering Standards
-
-| Document | Description |
-|---|---|
-| [PR Review Standard](engineering/PR_REVIEW_STANDARD.md) | How pull requests are created, reviewed, approved, and merged |
-| [ADR-001: SQLite over Postgres](engineering/adr/ADR-001-002-sqlite-httpx-decisions.md#adr-001-sqlite-over-postgres-for-the-local-mandate-ledger) | Why SQLite was chosen for the mandate ledger |
-| [ADR-002: HTTPX Transport Patching](engineering/adr/ADR-001-002-sqlite-httpx-decisions.md#adr-002-httpx-transport-patching-over-a-proxy-architecture) | Why transport patching was chosen over a proxy architecture |
-
----
-
-## Repository Root
-
-These files live at the repository root for GitHub integration:
+## Engineering
 
 | Document | Description |
 |---|---|
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | How to set up, branch, test, and submit pull requests |
-| [CHANGELOG.md](../CHANGELOG.md) | Version history and release notes |
-| [SECURITY.md](../SECURITY.md) | How to report vulnerabilities and security design principles |
-| [README.md](../README.md) | Project overview, quick start, and feature summary |
+| [PR Review Standard](engineering/PR_REVIEW_STANDARD.md) | Review expectations and merge standards |
+| [ADR-001 / ADR-002](engineering/adr/ADR-001-002-sqlite-httpx-decisions.md) | Rationale for SQLite and HTTPX interception |
 
----
+## Repository Root References
 
-> **Copyright © 2026, MLK Computer Consulting.** Licensed under the MIT License.
+| Document | Description |
+|---|---|
+| [README.md](../README.md) | Project overview and quick start |
+| [CHANGELOG.md](../CHANGELOG.md) | Release history and unreleased implementation snapshot |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Contributor workflow |
+| [SECURITY.md](../SECURITY.md) | Security reporting and current constraints |

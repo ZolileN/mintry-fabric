@@ -1,98 +1,80 @@
-# Mintry Fabric: Roadmap
+# Mintry Fabric Roadmap
 
-This roadmap outlines planned features, improvements, and milestones. It is a living document and subject to change based on team priorities and user feedback.
+This roadmap reflects the code currently present in the repository and the remaining work before a true production-ready `v1.0.0`.
 
----
+## Repository Status
 
-## Current Release: v0.5.0
+The implementation currently covers the roadmap milestones through `v0.5.0`:
 
-Core Logic Fabric is live with synchronous and asynchronous HTTPX interception, multi-provider token metering (OpenAI, Anthropic, Gemini, Mistral), per-model pricing lookup, cryptographic mandate validation (ES256 + expiry), embedded dark-themed glassmorphism dashboard, and JSON/webhook alerts.
+- sync and async interception
+- multi-provider metering and per-model pricing
+- mandate lifecycle and expiry enforcement
+- audit log and CLI inspection
+- local observability dashboard
+- dashboard-driven mandate allocation and revocation
+- JSON logs and webhook notifications
 
----
+## Completed Milestones
 
-## v0.1.1 — Patch (Near-term)
+### v0.1.1 - Patch
 
-> Bug fixes and known limitations from the initial release.
+- [x] Fix `Decimal` import usage in wallet top-up flow
+- [x] Replace hardcoded mandate routing with header-based routing
+- [x] Add `MintryWallet.create_mandate()`
+- [x] Add `MintryWallet.exhaust_mandate()`
+- [x] Improve budget failure messages with mandate details
 
-- [x] Fix `Decimal` import missing in `wallet.add_funds`
-- [x] Fix hardcoded `mt_task_882x` mandate ID in `GlobalHTTPInterceptor` — route dynamically via `X-Mintry-Mandate` header
-- [x] Add `MintryWallet.create_mandate(mandate_id, max_usd)` public method
-- [x] Add `MintryWallet.exhaust_mandate(mandate_id)` for cleanup
-- [x] Improve error messaging to include mandate ID and remaining budget in `PermissionError`
+### v0.2.0 - Async Support
 
----
+- [x] Patch `httpx.AsyncClient.send`
+- [x] Provide async-safe interception flow using separate request-time database connections where needed
+- [x] Keep `PolicyEngine.authorize()` usable in both sync and async interception paths
+- [x] Add async coverage in the test suite
 
-## v0.2.0 — Async Support
+### v0.3.0 - Multi-Provider Support
 
-> Unblock teams using async agent frameworks.
-
-- [x] Patch `httpx.AsyncClient.send` for full async interception
-- [x] Support `asyncio`-safe SQLite writes (connection-per-thread or `aiosqlite`)
-- [x] Async-compatible `PolicyEngine.authorize`
-- [x] Update test suite with async fixtures
-
----
-
-## v0.3.0 — Multi-Provider Support
-
-> Extend beyond OpenAI to cover the full LLM provider landscape.
-
-- [x] Anthropic (`api.anthropic.com`) token metering
-- [x] Google Gemini (`generativelanguage.googleapis.com`) token metering
-- [x] Mistral (`api.mistral.ai`) token metering
-- [x] Per-provider token pricing table (configurable, with live update mechanism)
+- [x] Anthropic metering
+- [x] Gemini metering
+- [x] Mistral metering
+- [x] Per-model pricing table
 - [x] Provider-agnostic mandate routing
 
----
+### v0.4.0 - Mandate Lifecycle and Governance
 
-## v0.4.0 — Mandate Lifecycle & Governance
+- [x] Mandate expiry enforcement
+- [x] ES256 signature verification helpers for `AP2IntentMandate`
+- [x] Status transitions: `active`, `exhausted`, `expired`
+- [x] Append-only audit log
+- [x] CLI mandate listing and inspection
 
-> Full mandate management for production use.
+### v0.5.0 - Observability and Dashboard
 
-- [x] Mandate expiry enforcement using `AP2IntentMandate.expires_at`
-- [x] `AP2IntentMandate` signature verification (BBS+, ES256)
-- [x] Mandate status transitions: `active` → `exhausted` → `expired`
-- [x] Mandate audit log (immutable append-only table)
-- [x] CLI: `mintry mandates list`, `mintry mandates inspect <id>`
+- [x] Local web dashboard
+- [x] Structured JSON logs
+- [x] Webhook alerts
+- [x] Dashboard-driven budget allocation and revoke controls
+- [x] Shared SDK/dashboard workflow against the same SQLite ledger
 
----
+## Remaining Work Before v1.0.0
 
-## v0.5.0 — Observability & Dashboard
+### v1.0.0 - Production-Ready Release
 
-> Real-time visibility into agent spend and mandate health.
-
-- [x] Local web dashboard (Spend by mandate, time-series chart, top agents by cost)
-- [x] Structured JSON log output for integration with Datadog, Grafana, or similar
-- [x] Webhook support for mandate exhaustion events
-- [x] Remote sync of ledger data to Mintry monitoring plane (background client hooks built)
-- [x] **Dashboard-Driven Budget Allocation & Controls** — CTOs allocate/revoke budgets from UI with instant SDK propagation (no redeploy required)
-
----
-
-## v1.0.0 — Production-Ready Release
-
-> Hardened, fully documented, and suitable for team-wide deployment.
-
-- [ ] All known bugs from 0.x resolved
-- [ ] Stable public API with semantic versioning guarantee
-- [ ] Full async + sync support
-- [ ] Complete API reference and integration guides
-- [ ] Docker-based deployment option for shared team ledger
-- [ ] SDK clients for TypeScript/JavaScript agent ecosystems
-
----
+- [ ] Resolve remaining known release/documentation mismatches
+- [ ] Promote a stable public API and publish the corresponding package version
+- [x] Full sync + async support
+- [x] Complete Python integration and API reference docs
+- [ ] Docker-based deployment option for a shared team ledger
+- [ ] SDK clients for TypeScript/JavaScript ecosystems
+- [ ] Clear deployment guidance for multi-process and multi-host usage
 
 ## Ideas Under Consideration
 
-These are not yet scheduled but have been discussed:
+- shared ledger mode beyond a single local SQLite file
+- VS Code spend visibility
+- automated Stripe-triggered top-ups
+- configurable intent blocklists instead of the current built-in phrases
 
-- **Per-model pricing overrides** — [x] Completed (via `register_model` pricing API)
-- **Shared ledger mode** — One central `vouchers.db` served over a local network for multi-agent teams.
-- **VS Code extension** — Inline spend display while writing agent code.
-- **Stripe top-up automation** — Automatically top up mandates via Stripe when spend approaches the ceiling.
+## Notes
 
----
-
-## Feedback
-
-Have a feature request or priority suggestion? Open a GitHub Discussion or mention it in your next PR.
+- The repo still needs release-management cleanup before it should be called `v1.0.0`.
+- Documentation in this folder is written against the current code in `src/mintry`, not against an already-published production release.

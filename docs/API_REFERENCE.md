@@ -1,52 +1,36 @@
-# Mintry Fabric: API Reference
+# Mintry Fabric API Reference
 
-This document describes the complete public interface of the `mintry` package.
+This document describes the current Python API implemented in `src/mintry`.
 
----
+## Top-Level API
 
-## Top-Level
+### `mintry.init(api_key, db_path="~/.mintry/vouchers.db", webhook_url=None)`
 
-### `mintry.init(api_key)`
+Initialize the wallet, engine, and global HTTPX interceptor.
 
-Initializes the Mintry Logic Fabric and installs the global HTTPX transport hook.
+Parameters:
 
-Must be called once at application startup, before any LLM client is instantiated.
+| Name | Type | Description |
+|---|---|---|
+| `api_key` | `str` | Required non-empty string. Stored on the engine instance for integration use. |
+| `db_path` | `str` | SQLite ledger path. Defaults to `~/.mintry/vouchers.db`. |
+| `webhook_url` | `str | None` | Optional webhook endpoint for authorization-failure and shield-exhaustion events. |
 
-**Parameters**
+Returns:
 
-| Name | Type | Required | Description |
-|---|---|---|---|
-| `api_key` | `str` | ✅ | Your `MINTRY_API_KEY` from the Mintry monitoring plane. |
+- `PolicyEngine`
 
-**Returns**
+Raises:
 
-`PolicyEngine` — The active engine instance. Use this to interact with the wallet and authorize mandates programmatically.
+- `ValueError` if `api_key` is empty or not a string
 
-**Side Effects**
+Side effects:
 
-- Monkey-patches `httpx.Client.send` globally.
-- Initializes `MintryWallet` and creates `~/.mintry/vouchers.db` if it does not exist.
-- Prints confirmation to stdout.
-
-**Example**
-
-```python
-import mintry
-
-engine = mintry.init(api_key="mk_live_xxxxx")
-# ✨ Mintry Logic Fabric Active | No-GIL: True
-# ✨ Mintry Logic Fabric Hooked into HTTPX
-```
-
-**Raises**
-
-Does not raise on initialization. Budget enforcement errors are raised at request time (see `PolicyEngine.authorize`).
-
----
+- creates the SQLite ledger if needed
+- installs sync and async HTTPX patches once per process
+- prints startup messages unless `MINTRY_JSON_LOGS=1`
 
 ## `MintryWallet`
-
-Manages the local SQLite ledger (`vouchers.db`) for mandate tracking and spend attribution.
 
 ```python
 from mintry.core.wallet import MintryWallet
@@ -54,178 +38,122 @@ from mintry.core.wallet import MintryWallet
 
 ### `MintryWallet(db_path="~/.mintry/vouchers.db")`
 
-**Parameters**
+Opens the SQLite ledger, creates schema if missing, enables WAL mode, and seeds the default mandate `mt_task_882x`.
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `db_path` | `str` | `"~/.mintry/vouchers.db"` | Path to the SQLite database. Created automatically if it does not exist. |
+### `get_audit_log(mandate_id) -> list[dict]`
 
-**Notes**
-- WAL mode (`PRAGMA journal_mode=WAL`) is enabled on connection for thread-safe concurrent access.
-- A seed mandate (`mt_task_882x`, `max_usd=0.01`) is inserted on first run via `INSERT OR IGNORE`.
+Returns append-only history rows with:
 
----
+- `id`
+- `timestamp`
+- `action`
+- `amount`
+- `details`
 
-### `MintryWallet.check_authorization(mandate_id, cost=0.002)`
+### `check_authorization(mandate_id, cost=0.002) -> bool`
 
-Checks whether a mandate has sufficient remaining budget and atomically deducts the cost if it does.
+Legacy wallet-level authorization helper. Checks headroom and records the provided cost immediately if allowed.
 
-**Parameters**
+### `add_funds(mandate_id, amount) -> bool`
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `mandate_id` | `str` | — | The unique mandate identifier. |
-| `cost` | `float` | `0.002` | The estimated cost in USD to deduct if authorized. |
+Increases `max_usd` for an existing mandate and records a `top_up` audit event. `amount` is intended to be a `Decimal`, but any value convertible to `float` will work.
 
-**Returns**
+### `get_mandate(mandate_id) -> dict`
 
-`bool` — `True` if the mandate had sufficient funds and the cost was deducted. `False` if the mandate does not exist or the budget is insufficient.
+Returns:
 
----
+| Key | Description |
+|---|---|
+| `budget_usd` | Budget ceiling for the mandate |
+| `spent_usd` | Recorded spend |
+| `status` | `active`, `exhausted`, `expired`, or `unknown` |
+| `expires_at` | `datetime` or `None` |
 
-### `MintryWallet.record_usage(mandate_id, actual_cost)`
+Unknown mandates return zeroed values with `status="unknown"`.
 
-Adds actual post-flight token cost to the mandate's cumulative `spent_usd`.
+### `record_usage(mandate_id, actual_cost) -> None`
 
-**Parameters**
+Adds actual post-flight spend and logs a `spend` event.
 
-| Name | Type | Description |
-|---|---|---|
-| `mandate_id` | `str` | The mandate to record spend against. |
-| `actual_cost` | `float` | The exact USD cost calculated from token usage. |
+### `get_spent(mandate_id) -> float`
 
-**Notes**
+Returns the current `spent_usd` for a mandate.
 
-This is called by `GlobalHTTPInterceptor` after every successful LLM response. It is the single source of truth for spend attribution.
+### `create_mandate(mandate_id, max_usd, expires_at=None) -> None`
 
----
+Creates a mandate row and emits a `create` audit event.
 
-### `MintryWallet.add_funds(mandate_id, amount)`
+### `update_mandate(mandate_id, max_usd, expires_at=None, status="active") -> None`
 
-Increases the `max_usd` budget ceiling for an existing mandate (top-up).
+Updates budget, status, and expiry. Used by the dashboard allocation flow.
 
-**Parameters**
+### `exhaust_mandate(mandate_id) -> None`
 
-| Name | Type | Description |
-|---|---|---|
-| `mandate_id` | `str` | The mandate to increase budget for. |
-| `amount` | `Decimal` | The amount in USD to add to `max_usd`. |
+Marks the mandate as `exhausted` and logs an `exhaust` event.
 
-**Returns**
+### `is_expired(mandate_id) -> bool`
 
-`bool` — `True` on success, `False` on failure (with error printed to stdout).
+Checks expiry and automatically updates an active expired mandate to `status="expired"` with a matching audit event.
 
----
+### `list_mandates() -> list[dict]`
 
-### `MintryWallet.get_mandate(mandate_id)`
-
-Fetches the current budget and spend state for a mandate.
-
-**Parameters**
-
-| Name | Type | Description |
-|---|---|---|
-| `mandate_id` | `str` | The mandate to query. |
-
-**Returns**
-
-`dict` with the following keys:
-
-| Key | Type | Description |
-|---|---|---|
-| `budget_usd` | `float` | The maximum allocated budget (`max_usd`). |
-| `spent_usd` | `float` | Cumulative spend to date. |
-
-Returns `{"budget_usd": 0.0, "spent_usd": 0.0}` if the mandate does not exist.
-
----
-
-### `MintryWallet.get_spent(mandate_id)`
-
-Returns the raw `spent_usd` value for a mandate.
-
-**Parameters**
-
-| Name | Type | Description |
-|---|---|---|
-| `mandate_id` | `str` | The mandate to query. |
-
-**Returns**
-
-`float` — Cumulative spend in USD. Returns `0.0` if the mandate does not exist.
-
----
+Returns all mandates ordered by ID with budget, spend, status, and expiry values.
 
 ## `PolicyEngine`
 
-The authorization gatekeeper. Evaluates whether an outbound LLM request is permitted based on the remaining mandate budget.
-
 ```python
-from mintry.core.engine import PolicyEngine
+from mintry.core.engine import PolicyEngine, Mandate
 ```
 
-### `PolicyEngine(wallet)`
+### `PolicyEngine(wallet, webhook_url=None)`
 
-**Parameters**
+Parameters:
 
 | Name | Type | Description |
 |---|---|---|
-| `wallet` | `MintryWallet` | The wallet instance to query for authorization decisions. |
+| `wallet` | `MintryWallet` | Backing ledger instance |
+| `webhook_url` | `str | None` | Optional explicit webhook URL. Falls back to `MINTRY_WEBHOOK_URL` if unset. |
 
----
+### `authorize(mandate_id, request, deduct=True) -> bool`
 
-### `PolicyEngine.authorize(mandate_id, request, deduct=True)`
+Authorization flow:
 
-Performs a two-phase budget check for an outbound request.
+1. reject expired mandates
+2. reject `exhausted` mandates
+3. require at least `$0.01` remaining headroom
+4. optionally deduct a flat `0.002` pre-flight fee when `deduct=True`
 
-**Phase 1 — Safety threshold:** Ensures at least `$0.01` of headroom remains (`budget_usd - spent_usd >= 0.01`).  
-**Phase 2 — Base fee deduction:** If `deduct=True`, records a `$0.002` base fee via `wallet.record_usage`.
+Returns `True` when the request may proceed and `False` when it should be blocked.
 
-**Parameters**
+### `get_budget_summary(mandate_id) -> dict`
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `mandate_id` | `str` | — | The mandate to authorize against. |
-| `request` | `httpx.Request` | — | The outbound request (used for future request-level policies). |
-| `deduct` | `bool` | `True` | Whether to apply the base fee deduction. Set to `False` when metering tokens post-flight instead. |
+Returns a structured summary with:
 
-**Returns**
+- `mandate_id`
+- `budget_usd`
+- `spent_usd`
+- `remaining_usd`
+- `status`
+- `expired`
 
-`bool` — `True` if authorized, `False` if budget is exhausted.
+### `shield(task, max_usd=None, expires_at=None)`
 
----
+Context manager for two modes:
 
-### `PolicyEngine.shield(task, max_usd)`
+- shared-mandate mode: if `max_usd` is `None` and `task` already exists as a mandate ID, the existing mandate is reused and remains active on exit
+- ephemeral mode: if `max_usd` is provided, a new `mt_<12 hex chars>` mandate is created and marked exhausted on exit
 
-A context manager that creates a scoped mandate for a single task.
+If `max_usd` is `None` and no existing mandate matches `task`, the engine creates a shared named mandate with a default budget of `0.05`.
 
-**Parameters**
+Yields a `Mandate` object with:
 
-| Name | Type | Description |
-|---|---|---|
-| `task` | `str` | A human-readable task description. |
-| `max_usd` | `float` | The budget ceiling for this task scope. |
+- `id`
+- `task`
+- `max_usd`
 
-**Returns**
-
-A context manager that yields a mandate object with an `.id` attribute.
-
-**Example**
-
-```python
-with engine.shield("analyze-logs", max_usd=0.10) as mandate:
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": "Summarize these logs."}],
-        extra_headers={"X-Mintry-Mandate": mandate.id}
-    )
-```
-
----
+When an ephemeral shield exits, the engine also emits a `mandate_exhausted` webhook event if webhooks are configured.
 
 ## `GlobalHTTPInterceptor`
-
-Patches `httpx.Client.send` globally to intercept all LLM traffic.
 
 ```python
 from mintry.interceptors.global_http import GlobalHTTPInterceptor
@@ -233,88 +161,82 @@ from mintry.interceptors.global_http import GlobalHTTPInterceptor
 
 ### `GlobalHTTPInterceptor(engine)`
 
-**Parameters**
+Wraps a `PolicyEngine` for global HTTPX interception.
 
-| Name | Type | Description |
-|---|---|---|
-| `engine` | `PolicyEngine` | The engine instance used for pre-flight authorization. |
+### `install() -> None`
 
----
+Monkey-patches:
 
-### `GlobalHTTPInterceptor.install()`
+- `httpx.Client.send`
+- `httpx.AsyncClient.send`
 
-Installs the global transport patch. Called automatically by `mintry.init()`.
+Only requests to known LLM hosts are intercepted:
 
-After installation, every `httpx.Client.send` call is intercepted. The three-phase lifecycle:
+- `api.openai.com`
+- `api.anthropic.com`
+- `generativelanguage.googleapis.com`
+- `api.mistral.ai`
 
-1. **Pre-flight:** `PolicyEngine.authorize` is called with `deduct=False`.
-2. **Flight:** The original request is forwarded to the LLM provider.
-3. **Post-flight:** Token usage is extracted from the response and `wallet.record_usage` is called with the exact cost.
+For intercepted requests, Mintry:
 
-**Cost Calculation**
+1. resolves the mandate ID from `X-Mintry-Mandate` or falls back to `mt_task_882x`
+2. runs engine authorization without a pre-flight deduction
+3. blocks prohibited prompt patterns
+4. forwards the original request
+5. reads usage data from successful responses
+6. calculates cost using `mintry.core.pricing.calculate_cost()`
+7. records spend in the wallet
 
-```
-actual_cost = (prompt_tokens + completion_tokens) × $0.000005
-```
+### `_reset() -> None`
 
-**Raises**
+Testing helper that restores the original HTTPX send methods and clears install state.
 
-`PermissionError` — Raised locally (before the network request) if:
-- The mandate budget is exhausted.
-- A prohibited intent pattern is detected in the prompt.
-
----
-
-### `GlobalHTTPInterceptor.sync_intercept(request)`
-
-Performs manual interception on a single request. Useful for testing.
-
-**Parameters**
-
-| Name | Type | Description |
-|---|---|---|
-| `request` | `httpx.Request` | The request to inspect. |
-
-**Raises**
-
-`PermissionError` — If budget is exhausted or prohibited intent is detected.
-
----
-
-## `AP2IntentMandate`
-
-A Pydantic model representing an AP2-compliant signed mandate payload.
+## Pricing Helpers
 
 ```python
-from mintry.models.mandates import AP2IntentMandate
+from mintry.core.pricing import calculate_cost, get_model_rates, register_model, list_models
 ```
 
-### Fields
+### `calculate_cost(model, prompt_tokens, completion_tokens) -> float`
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `mandate_id` | `str` | ✅ | Unique mandate identifier. |
-| `user_id` | `str` | ✅ | The user or agent this mandate is issued to. |
-| `max_budget` | `float` | ✅ | Maximum USD budget for the task cycle. |
-| `currency` | `str` | `"USD"` | Currency denomination. |
-| `resource_scope` | `list[str]` | `["inference", "search", "vector_db"]` | Resource types this mandate covers. |
-| `expires_at` | `datetime` | ✅ | Mandate expiry timestamp. |
-| `signature` | `str` | ✅ | BBS+ or ES256 cryptographic signature. |
+Calculates spend using model-specific input and output rates.
 
----
+### `get_model_rates(model) -> dict[str, float]`
 
-## Error Reference
+Returns `{"input": ..., "output": ...}` for a model. Uses exact match first, then prefix matching for versioned names, then a default fallback rate.
 
-| Error | Raised By | Meaning |
-|---|---|---|
-| `PermissionError` | `GlobalHTTPInterceptor` | Budget exhausted or prohibited intent detected. The request was killed before reaching the provider. |
+### `register_model(model, input_rate, output_rate) -> None`
 
----
+Adds or overrides a model entry at runtime.
 
-## Environment Variables
+### `list_models() -> list[str]`
 
-| Variable | Required | Description |
-|---|---|---|
-| `MINTRY_API_KEY` | ✅ | Authentication key for the Mintry monitoring plane. Passed to `mintry.init()`. |
+Lists all registered models.
 
-See [`docs/CONFIGURATION.md`](CONFIGURATION.md) for full configuration reference.
+## Signed Mandates
+
+```python
+from mintry.models.mandates import AP2IntentMandate, sign_mandate
+```
+
+### `AP2IntentMandate`
+
+Fields:
+
+- `mandate_id`
+- `user_id`
+- `max_budget`
+- `currency`
+- `resource_scope`
+- `expires_at`
+- `signature`
+
+Methods:
+
+- `is_expired() -> bool`
+- `get_signing_payload() -> bytes`
+- `verify_signature(public_key) -> bool`
+
+### `sign_mandate(mandate, private_key) -> str`
+
+Returns a base64-encoded ES256 signature for the canonical mandate payload.

@@ -107,7 +107,7 @@ The OpenAI Python SDK (and most modern LLM SDKs) use `httpx` as their underlying
 
 ## Consequences
 
-- **Sync only (v0.1.0):** `httpx.AsyncClient.send` is not patched. Async clients bypass the Fabric. Async support is tracked for v0.2.0.
+- **Historical note:** the original `v0.1.0` implementation only patched `httpx.Client.send`. The current codebase now patches both `httpx.Client.send` and `httpx.AsyncClient.send`.
 - **Library coupling:** If an LLM SDK switches away from `httpx`, the interceptor will stop working. This is monitored as a dependency risk.
 - **Global side effect:** `mintry.init()` has a global side effect on all `httpx.Client` instances in the process. This is intentional but must be documented clearly.
 

@@ -1,82 +1,96 @@
-![Logic Fabric CI](https://github.com/ZolileN/mintry-fabric/actions/workflows/tests.yml/badge.svg)
+# Mintry Fabric
 
-# Mintry Fabric 🚀
+Mintry Fabric is a Python interception layer for LLM spend governance. It hooks into `httpx`, checks mandates before requests leave the process, meters provider responses after they return, and writes budget and audit data to a local SQLite ledger.
 
-**Mintry Fabric** is a high-performance, real-time AI metering and policy enforcement layer designed for the 2026 AI ecosystem. It acts as a "Logic Fabric" that sits between your AI agents and their LLM providers, ensuring fiscal responsibility through granular budget mandates and SQLite-backed usage tracking.
+The current repository state includes:
 
-## ✨ Features
+- sync and async `httpx` interception
+- dynamic mandate routing via `X-Mintry-Mandate`
+- per-model pricing for OpenAI, Anthropic, Gemini, and Mistral
+- mandate expiry enforcement and audit logging
+- a local CLI and observability dashboard
+- webhook notifications and JSON log output
 
-- **Logic Fabric Interception**: Hooks directly into the `HTTPX` transport layer to monitor OpenAI (and other provider) traffic without modifying agent code.
-- **Real-Time Metering**: Calculates exact token costs post-flight and updates a persistent ledger.
-- **Mandate-Based Budgeting**: Define `max_usd` limits for specific tasks to prevent runaway costs.
-- **No-GIL Ready**: Optimized for Python 3.14+ free-threaded environments.
-- **SQLite Persistence**: Uses a robust SQLite backend with Write-Ahead Logging (WAL) for thread-safe transaction logging.
+## Install
 
-## 🛠️ Architecture
+For local development:
 
-The system consists of three core components:
+```bash
+uv sync --dev
+```
 
-1.  **MintryWallet**: Manages the SQLite database and mandate ledger[cite: 1].
-2.  **PolicyEngine**: Authorizes requests based on available budget before they are fired[cite: 1].
-3.  **Global Interceptor**: A patched `HTTPX` transport that coordinates the authorization and metering flow[cite: 1].
-
-## 🚀 Quick Start
-
-### Installation
+For direct use from GitHub:
 
 ```bash
 uv add git+https://github.com/ZolileN/mintry-fabric.git
 ```
 
-### Usage
-
-Initialize the fabric at the entry point of your application:
+## Quick Start
 
 ```python
 import mintry
 from openai import OpenAI
 
-# Initialize the Logic Fabric
-mintry.init(api_key="your_mintry_key")
+engine = mintry.init(
+    api_key="mk_dev_example",
+    db_path="test_data/local.db",
+)
 
-# Standard OpenAI calls are now automatically metered
-client = OpenAI()
+engine.wallet.create_mandate("research_task", 1.00)
+
+client = OpenAI(api_key="sk-example")
 response = client.chat.completions.create(
     model="gpt-5-preview",
-    messages=[{"role": "user", "content": "Analyze these logs."}]
+    messages=[{"role": "user", "content": "Summarize these logs."}],
+    extra_headers={"X-Mintry-Mandate": "research_task"},
 )
 ```
 
-## 🧪 Testing
+If the request succeeds, Mintry will:
 
-The project includes a suite of metering tests that validate the delta between initial and final spend using `pytest-httpx`.
+1. check that `research_task` still has budget
+2. block prohibited prompt patterns before flight
+3. read usage metadata from the response
+4. record the actual spend in SQLite
+
+## CLI
 
 ```bash
-uv run pytest -s tests/test_metering.py
+uv run mintry mandates list
+uv run mintry mandates inspect mt_task_882x
+uv run mintry dashboard --db test_data/local.db
 ```
 
-**Successful Output:**
+The dashboard serves a local web UI at `http://127.0.0.1:8000` by default.
 
-```text
---- Phase 1: Executing Metered Request ---
-[TEST] Initial Spent: $0.060000
-[TEST] Final Spent: $0.070000
-[TEST] Calculated Delta: $0.010000
-[SUCCESS] Logic Fabric Metered the exact token cost.
+## Testing
+
+The repo’s tests assume the package dependencies are installed into the active environment.
+
+```bash
+uv sync --dev
+uv run pytest
 ```
 
-## 📂 Database Schema
+Useful focused runs:
 
-The `vouchers.db` maintains the following state[cite: 1]:
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `id` | TEXT | Primary key for the mandate (e.g., `mt_task_882x`)[cite: 1]. |
-| `max_usd` | REAL | The maximum budget allocated[cite: 1]. |
-| `spent_usd` | REAL | Cumulative spend tracked in real-time[cite: 1]. |
-| `status` | TEXT | Mandate status (active/exhausted)[cite: 1]. |
+```bash
+uv run pytest tests/test_metering.py
+uv run pytest tests/test_observability.py
+uv run pytest tests/test_sprint3.py
+```
 
----
+## Key Components
 
-## 📄 License
+- `MintryWallet`: SQLite-backed mandate ledger and audit log
+- `PolicyEngine`: authorization, expiry checks, shared-mandate reuse, webhook dispatch
+- `GlobalHTTPInterceptor`: sync/async `httpx` monkey-patch and post-flight metering
+- `AP2IntentMandate`: signed mandate model with ES256 verification helpers
+
+## Current Release Status
+
+The codebase implements most roadmap milestones through the `v0.5.0` feature set, but the published package metadata and release notes have not yet been promoted to a `v1.0.0` production-ready release. See [docs/ROADMAP.md](docs/ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md) for the current state.
+
+## License
 
 MIT

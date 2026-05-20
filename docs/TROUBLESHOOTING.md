@@ -1,146 +1,117 @@
-# Mintry Fabric: Troubleshooting Guide
+# Mintry Fabric: Troubleshooting
 
-Common errors, symptoms, and resolutions.
+## `PermissionError: Budget Exhausted`
 
----
+Cause:
 
-## 1. `PermissionError: Mintry Logic Fabric: Budget Exhausted`
+- the mandate has insufficient remaining headroom
+- the mandate is already `exhausted`
 
-**Symptom:** LLM calls raise a `PermissionError` locally before reaching the provider.
-
-**Cause:** The mandate's `spent_usd` has reached or exceeded `max_usd`, or the safety threshold of `$0.01` headroom is not available.
-
-**Resolution:**
+Check state:
 
 ```python
-# Check remaining budget
-spent = engine.wallet.get_spent("mt_task_882x")
-mandate = engine.wallet.get_mandate("mt_task_882x")
-remaining = mandate["budget_usd"] - spent
-print(f"Remaining: ${remaining:.4f}")
-
-# Top up the mandate if needed
-from decimal import Decimal
-engine.wallet.add_funds("mt_task_882x", Decimal("0.10"))
+mandate = engine.wallet.get_mandate("research_task")
+print(mandate)
 ```
 
----
-
-## 2. `PermissionError: Mintry Logic Fabric: Prohibited Intent Detected`
-
-**Symptom:** A `PermissionError` is raised mentioning "Security Violation" before the request is sent.
-
-**Cause:** The prompt contains one of the blocked patterns: `"bypass wallet"`, `"disable mintry"`, or `"delete vouchers.db"`.
-
-**Resolution:** Review the prompt content being sent by your agent. These patterns indicate either a misconfigured prompt template or an adversarial injection attempt. Do not attempt to work around the filter — investigate the root cause.
-
----
-
-## 3. The Fabric Does Not Intercept Requests
-
-**Symptom:** LLM calls succeed but no spend is recorded in `vouchers.db`.
-
-**Cause:** `mintry.init()` was not called before the `OpenAI` (or other) client was instantiated, OR an `httpx.AsyncClient` is being used instead of `httpx.Client`.
-
-**Resolution:**
+Top up if needed:
 
 ```python
-# CORRECT: init before creating the client
+from decimal import Decimal
+engine.wallet.add_funds("research_task", Decimal("0.10"))
+```
+
+## `PermissionError` mentions expiry
+
+Cause:
+
+- the mandate’s `expires_at` has passed
+
+Fix:
+
+- create a new mandate
+- or update the existing one through the dashboard or wallet API
+
+## `PermissionError: Prohibited Intent Detected`
+
+Cause:
+
+- the request body contains one of the built-in blocked phrases
+
+Current blocked phrases:
+
+- `bypass wallet`
+- `disable mintry`
+- `delete vouchers.db`
+
+## Requests are not being metered
+
+Check the common causes:
+
+1. `mintry.init()` was called after the client was created
+2. the request is not going to a supported LLM host
+3. dependencies were not installed into the environment you are running
+
+Correct order:
+
+```python
 import mintry
 from openai import OpenAI
 
-engine = mintry.init(api_key="your_key")  # Must come first
-client = OpenAI()
+engine = mintry.init(api_key="mk_dev_example")
+client = OpenAI(api_key="sk-example")
 ```
 
-> **Known limitation (v0.1.0):** Only `httpx.Client` (synchronous) is patched. Async clients using `httpx.AsyncClient` bypass the Fabric entirely. Use synchronous clients until async support is released.
+## `ModuleNotFoundError: mintry`
 
----
-
-## 4. SQLite `database is locked` Error
-
-**Symptom:** `sqlite3.OperationalError: database is locked` appears during high-concurrency tests or multi-process runs.
-
-**Cause:** WAL mode is enabled but multiple processes are attempting to write simultaneously without a timeout.
-
-**Resolution:** WAL mode significantly reduces locking, but write contention can still occur. Ensure only one process writes to the ledger at a time, or configure a connection timeout:
-
-```python
-conn = sqlite3.connect(db_path, timeout=10)  # Wait up to 10 seconds
-```
-
----
-
-## 5. `add_funds` Raises `NameError: name 'Decimal' is not defined`
-
-**Symptom:** Calling `wallet.add_funds()` raises a `NameError`.
-
-**Cause:** Known bug in v0.1.0 — `Decimal` is referenced in `wallet.py` but not imported.
-
-**Workaround:** Import `Decimal` and cast to `float` before calling:
-
-```python
-from decimal import Decimal
-engine.wallet.add_funds("mt_task_882x", Decimal("0.05"))
-```
-
-A fix is tracked for v0.1.1.
-
----
-
-## 6. Spend is Double-Counted
-
-**Symptom:** `get_spent()` returns values higher than expected after a single request.
-
-**Cause:** Both `check_authorization` (which deducts a base fee) and `record_usage` (which records the actual token cost) are being called on the same request. In `install()`, `authorize` is called with `deduct=False` to prevent this — but if `check_authorization` is called separately in the same flow, double-counting occurs.
-
-**Resolution:** Use the interceptor's `install()` path exclusively. Do not call `check_authorization` manually if the global hook is already active.
-
----
-
-## 7. `vouchers.db` Not Found / Permission Denied
-
-**Symptom:** `sqlite3.OperationalError: unable to open database file` on startup.
-
-**Cause:** The `~/.mintry/` directory cannot be created, or the user does not have write permission to the target path.
-
-**Resolution:**
+The package is not installed in the active environment.
 
 ```bash
-mkdir -p ~/.mintry
-chmod 700 ~/.mintry
+uv sync --dev
 ```
 
-Or override the path to a writable location:
+## `ModuleNotFoundError: openai`
 
-```python
-wallet = MintryWallet(db_path="/tmp/mintry_dev.db")
-```
-
----
-
-## 8. Tests Fail with `pytest-httpx` Version Mismatch
-
-**Symptom:** `ImportError` or fixture errors when running `uv run pytest`.
-
-**Cause:** `pytest-httpx` has breaking API changes between minor versions. The project requires `>=0.36.2`.
-
-**Resolution:**
+Runtime dependencies are missing from the active environment.
 
 ```bash
-uv sync --all-extras --dev
-uv run pytest --version
+uv sync --dev
 ```
 
-Ensure the installed version matches the constraint in `pyproject.toml`.
+## `sqlite3.OperationalError: unable to open database file`
 
----
+Use a writable path and make sure the parent directory exists:
 
-## Getting Further Help
+```bash
+mkdir -p test_data
+uv run mintry dashboard --db test_data/local.db
+```
 
-If your issue is not listed here:
+## `sqlite3.OperationalError: database is locked`
 
-1. Check the [API Reference](API_REFERENCE.md) to verify correct usage.
-2. Check the [CHANGELOG](../CHANGELOG.md) for known issues in your version.
-3. Open a GitHub issue with your Python version, `uv` version, error message, and a minimal reproduction script.
-4. For security-related issues, follow the [SECURITY](../SECURITY.md) disclosure process instead.
+Mintry uses SQLite with WAL mode, which helps, but it is still not a substitute for a fully managed shared write service.
+
+What to do:
+
+- keep development flows on one machine and one DB path
+- avoid heavy concurrent multi-process writers
+- use the dashboard and SDK against the same local file only when that access pattern is modest
+
+## Webhooks are not firing
+
+Check:
+
+1. `webhook_url` was passed to `mintry.init()` or `MINTRY_WEBHOOK_URL` is set
+2. the target accepts POST requests
+3. your code path actually triggers an authorization failure or shield exhaustion event
+
+## Tests fail during collection
+
+Most collection failures in this repo come from setup rather than logic:
+
+```bash
+uv sync --dev
+uv run pytest
+```
+
+If you deliberately run raw `pytest` outside the synced environment, imports may fail.
