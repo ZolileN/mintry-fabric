@@ -2,6 +2,18 @@
 
 Mintry Fabric is designed around a local-first philosophy using SQLite. Because it relies on SQLite's Write-Ahead Logging (WAL) for high-concurrency access, deployment strategies require careful consideration of filesystem mounts and process topography.
 
+## Architecture Map
+
+Mintry Fabric utilizes a decoupled architecture separating the control and enforcement planes:
+
+| Component | What it Runs | Where it Lives | Cost to You |
+| --------- | ------------ | -------------- | ----------- |
+| **Frontend** | Next.js Marketing & Dashboard | Vercel | $0 (Free Tier) |
+| **Control Plane** | Central Sync API & Sync Database | Render | $0 to $5/mo |
+| **Enforcement Plane** | Core Logic Fabric + Local SQLite Ledger | Customer's Infrastructure | $0 (Paid by client) |
+
+The **Enforcement Plane** is what gets deployed to the client's infrastructure. It writes to a local SQLite ledger (`vouchers.db`) for zero-latency budget authorization. The **Control Plane** handles asynchronous syncing back to central servers.
+
 ## 1. Local Native Development
 
 The simplest deployment model is running Mintry Fabric directly on your local workstation.
