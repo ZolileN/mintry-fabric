@@ -35,7 +35,19 @@ This document is now a short planning snapshot rather than the original bug-fix 
 - [x] webhook notifications
 - [x] local dashboard server
 - [x] dashboard-driven mandate allocation and revoke flow
-- [x] dashboard/SDK shared-ledger workflow
+### Lane 5: Python "Three Lines" Ergonomics (Phase 1)
+
+- [x] `MintryMandateExceeded` custom exception with structured budget attributes
+- [x] global `mintry.mandate` context manager
+- [x] `MINTRY_API_KEY` environment variable fallback for `init()`
+- [x] backwards-compatible test suite enforcement
+
+### Lane 6: Node.js SDK & Sidecar Blueprint (Phases 2 & 3)
+
+- [x] TypeScript SDK wrapper using `AsyncLocalStorage` for mandate scoping
+- [x] Shared state via synchronous `better-sqlite3` driver
+- [x] Fetch interceptor for LLM budget enforcement
+- [x] ADR-003: Language-Agnostic Sidecar Proxy architecture (Go daemon)
 
 ## Current Test Coverage Areas
 

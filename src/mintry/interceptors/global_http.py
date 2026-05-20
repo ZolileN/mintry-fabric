@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 
 from mintry.core.pricing import calculate_cost
+from mintry.core.exceptions import MintryMandateExceeded
 
 # List of known LLM API host patterns
 _LLM_HOSTS = [
@@ -67,7 +68,7 @@ class GlobalHTTPInterceptor:
         return request.headers.get("x-mintry-mandate", "mt_task_882x")
 
     def _raise_budget_error(self, engine, mandate_id: str):
-        """Raise a PermissionError with budget details."""
+        """Raise a MintryMandateExceeded with budget details."""
         summary = engine.get_budget_summary(mandate_id)
         reason = "expired" if summary.get("expired") else "budget_exhausted"
         _print_log(
@@ -77,15 +78,10 @@ class GlobalHTTPInterceptor:
             budget_usd=summary.get("budget_usd"), 
             spent_usd=summary.get("spent_usd")
         )
-        if summary.get("expired"):
-            raise PermissionError(
-                f"Mintry Logic Fabric: Mandate '{summary['mandate_id']}' has expired. "
-                f"Budget: ${summary['budget_usd']:.4f} | Spent: ${summary['spent_usd']:.4f}"
-            )
-        raise PermissionError(
-            f"Mintry Logic Fabric: Budget Exhausted for mandate '{summary['mandate_id']}'. "
-            f"Budget: ${summary['budget_usd']:.4f} | Spent: ${summary['spent_usd']:.4f} | "
-            f"Remaining: ${summary['remaining_usd']:.4f} (minimum $0.01 required)"
+        raise MintryMandateExceeded(
+            task=summary["mandate_id"],
+            cap=summary["budget_usd"],
+            spent=summary["spent_usd"],
         )
 
     def _meter_response(self, engine, request: httpx.Request, data: dict):

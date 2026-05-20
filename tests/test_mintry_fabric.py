@@ -69,7 +69,7 @@ def test_logic_fabric_enforcement(tmp_path, httpx_mock):
                     print(f"\n[SUCCESS] Fabric Intervened at Request #{i+1}")
                     print(f"Reason: {e}")
                     # Verify the error includes budget details (Task 11)
-                    assert "Budget:" in error_msg or "Budget:" in cause_msg
+                    assert "Hard Cap:" in error_msg or "Hard Cap:" in cause_msg
                     blocked = True
                     break
                 raise e
