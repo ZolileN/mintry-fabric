@@ -65,6 +65,7 @@ Core Logic Fabric is live with synchronous and asynchronous HTTPX interception, 
 - [x] Structured JSON log output for integration with Datadog, Grafana, or similar
 - [x] Webhook support for mandate exhaustion events
 - [x] Remote sync of ledger data to Mintry monitoring plane (background client hooks built)
+- [x] **Dashboard-Driven Budget Allocation & Controls** — CTOs allocate/revoke budgets from UI with instant SDK propagation (no redeploy required)
 
 ---
 
