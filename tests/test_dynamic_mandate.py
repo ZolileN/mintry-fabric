@@ -79,8 +79,8 @@ def test_dynamic_mandate_routing(tmp_path, httpx_mock):
     alpha_spent = fabric.wallet.get_spent("task_alpha")
     beta_spent = fabric.wallet.get_spent("task_beta")
 
-    # 1000 tokens * $0.000005 = $0.005
-    assert alpha_spent == pytest.approx(0.005, rel=1e-5)
+    # 500 prompt tokens * $0.000005 + 500 completion tokens * $0.000015 = $0.01
+    assert alpha_spent == pytest.approx(0.01, rel=1e-5)
     assert beta_spent == 0.0
 
     print(f"\n[SUCCESS] Dynamic routing: task_alpha=${alpha_spent:.6f}, task_beta=${beta_spent:.6f}")

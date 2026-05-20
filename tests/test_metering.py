@@ -59,6 +59,6 @@ def test_real_time_metering(httpx_mock, tmp_path):
     print(f"[TEST] Final Spent: ${final_spent:.6f}")
     print(f"[TEST] Calculated Delta: ${delta:.6f}")
 
-    # Expected: 2000 * 0.000005 = 0.01
-    assert delta == pytest.approx(0.01, rel=1e-5)
+    # Expected: 1000 prompt tokens * 0.000005 + 1000 completion tokens * 0.000015 = 0.02
+    assert delta == pytest.approx(0.02, rel=1e-5)
     print("\n[SUCCESS] Logic Fabric Metered the exact token cost.")

@@ -150,35 +150,35 @@
 - **File:** `src/mintry/interceptors/global_http.py`
 - **Change:** Add an async counterpart to `patched_send` that intercepts `httpx.AsyncClient.send`. Use `aiosqlite` or connection-per-thread for safe async SQLite writes.
 - **Effort:** 3–4 hrs
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed
 
 ### Task 13: Add Per-Model / Per-Provider Pricing Table
 
 - **File:** New file `src/mintry/core/pricing.py`
 - **Change:** Create a configurable pricing registry with rates per model (GPT-4o, Claude, Gemini, Mistral, etc.). The interceptor should look up the model from the request body and apply the correct rate.
 - **Effort:** 2 hrs
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed
 
 ### Task 14: Mandate Expiry Enforcement
 
 - **Files:** `src/mintry/core/wallet.py`, `src/mintry/core/engine.py`
 - **Change:** Check `AP2IntentMandate.expires_at` during authorization. Reject expired mandates with a clear error.
 - **Effort:** 1 hr
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed
 
 ### Task 15: AP2IntentMandate Signature Verification
 
 - **Files:** `src/mintry/models/mandates.py`
 - **Change:** Implement BBS+ / ES256 signature verification using the `cryptography` dependency (already declared). Reject unsigned or malformed payloads.
 - **Effort:** 3–4 hrs
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed
 
 ### Sprint 3 Acceptance Criteria
 
-- [ ] Async agent code is intercepted and metered
-- [ ] Token costs are calculated using per-model pricing
-- [ ] Expired mandates are rejected at authorization time
-- [ ] Mandate signatures are cryptographically verified
+- [x] Async agent code is intercepted and metered
+- [x] Token costs are calculated using per-model pricing
+- [x] Expired mandates are rejected at authorization time
+- [x] Mandate signatures are cryptographically verified
 
 ---
 
