@@ -5,13 +5,14 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from http.server import HTTPServer
+from typing import ClassVar
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Multi-threaded HTTP server for handling concurrent dashboard requests."""
     daemon_threads = True
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    db_path = None
+    db_path: ClassVar[str | None] = None
 
     def log_message(self, format, *args):
         # Override to suppress standard HTTP logging to keep console clean
@@ -143,6 +144,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def get_stats_data(self) -> dict:
         db_resolved = Path(self.db_path).expanduser()
+        # Ensure schema migrations and seed tables exist before raw summary reads.
+        from mintry.core.wallet import MintryWallet
+        wallet = MintryWallet(db_path=str(db_resolved))
+        wallet.conn.close()
         conn = sqlite3.connect(db_resolved)
         try:
             # Total mandates
@@ -163,6 +168,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "id": r[0],
                     "budget_usd": r[1],
                     "spent_usd": r[2],
+                    "remaining_headroom": round((r[1] or 0.0) - (r[2] or 0.0), 4),
                     "status": r[3],
                     "expires_at": r[4] or "Never"
                 }
@@ -196,7 +202,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "total_mandates": total_mandates,
                     "total_budget": round(total_budget, 4),
                     "total_spent": round(total_spent, 4),
-                    "remaining_headroom": round(max(0.0, total_budget - total_spent), 4)
+                    "remaining_headroom": round(total_budget - total_spent, 4)
                 },
                 "top_mandates": top_mandates,
                 "mandates": mandates,

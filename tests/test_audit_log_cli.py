@@ -2,10 +2,8 @@
 
 import pytest
 import sys
-import os
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-import mintry
 from mintry.core.wallet import MintryWallet
 from mintry.cli import main
 
@@ -88,6 +86,7 @@ def test_cli_list_mandates(temp_db, capsys):
     wallet = MintryWallet(db_path=temp_db)
     wallet.create_mandate("cli_task_a", 10.0)
     wallet.create_mandate("cli_task_b", 5.0)
+    wallet.conn.close()
 
     sys.argv = ["mintry", "--db", temp_db, "mandates", "list"]
     main()
@@ -107,6 +106,7 @@ def test_cli_inspect_mandate(temp_db, capsys):
     wallet = MintryWallet(db_path=temp_db)
     wallet.create_mandate("inspect_me", 20.0)
     wallet.add_funds("inspect_me", Decimal("10.0"))
+    wallet.conn.close()
 
     sys.argv = ["mintry", "--db", temp_db, "mandates", "inspect", "inspect_me"]
     main()
@@ -126,7 +126,8 @@ def test_cli_inspect_mandate(temp_db, capsys):
 def test_cli_inspect_nonexistent_mandate(temp_db, capsys):
     """CLI mandates inspect exits with status code 1 for non-existent mandates."""
     # Ensure database is initialized
-    MintryWallet(db_path=temp_db)
+    wallet = MintryWallet(db_path=temp_db)
+    wallet.conn.close()
 
     sys.argv = ["mintry", "--db", temp_db, "mandates", "inspect", "does_not_exist"]
     
@@ -137,3 +138,37 @@ def test_cli_inspect_nonexistent_mandate(temp_db, capsys):
     
     captured = capsys.readouterr()
     assert "Error: Mandate 'does_not_exist' not found." in captured.err
+
+
+def test_cli_list_mandates_accepts_db_after_subcommand(temp_db, capsys):
+    """CLI accepts --db after the mandates subcommand."""
+    wallet = MintryWallet(db_path=temp_db)
+    wallet.create_mandate("cli_task_c", 7.5)
+    wallet.conn.close()
+
+    sys.argv = ["mintry", "mandates", "--db", temp_db, "list"]
+    main()
+
+    captured = capsys.readouterr()
+    assert "cli_task_c" in captured.out
+
+
+def test_cli_dashboard_accepts_db_after_subcommand(temp_db, monkeypatch):
+    """CLI accepts --db after the dashboard subcommand."""
+    captured = {}
+
+    def fake_start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):
+        captured["db_path"] = db_path
+        captured["host"] = host
+        captured["port"] = port
+
+    monkeypatch.setattr("mintry.core.dashboard.start_dashboard", fake_start_dashboard)
+
+    sys.argv = ["mintry", "dashboard", "--db", temp_db, "--host", "127.0.0.1", "--port", "8001"]
+    main()
+
+    assert captured == {
+        "db_path": temp_db,
+        "host": "127.0.0.1",
+        "port": 8001,
+    }

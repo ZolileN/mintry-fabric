@@ -610,6 +610,7 @@
                                 <th>Status</th>
                                 <th>Budget</th>
                                 <th>Spent</th>
+                                <th>Remaining</th>
                                 <th>Expiry</th>
                                 <th>Actions</th>
                             </tr>
@@ -713,19 +714,23 @@
             tableBodyEl.innerHTML = '';
             
             if (data.mandates.length === 0) {
-                tableBodyEl.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); font-family:var(--font-mono); font-size:12px;">// Database ledger empty</td></tr>';
+                tableBodyEl.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); font-family:var(--font-mono); font-size:12px;">// Database ledger empty</td></tr>';
             } else {
                 data.mandates.forEach(m => {
                     const tr = document.createElement('tr');
                     let badgeClass = 'badge-active';
                     if (m.status === 'exhausted') badgeClass = 'badge-exhausted';
                     if (m.status === 'expired') badgeClass = 'badge-expired';
+                    const remaining = typeof m.remaining_headroom === 'number'
+                        ? m.remaining_headroom
+                        : ((m.budget_usd || 0) - (m.spent_usd || 0));
                     
                     tr.innerHTML = `
                         <td class="td-id">${m.id}</td>
                         <td><span class="badge ${badgeClass}">${m.status}</span></td>
                         <td>$${m.budget_usd.toFixed(4)}</td>
                         <td>$${m.spent_usd.toFixed(4)}</td>
+                        <td>$${remaining.toFixed(4)}</td>
                         <td style="color:var(--text-secondary); font-family:var(--font-mono); font-size:11px;">${m.expires_at}</td>
                         <td>
                             <button class="btn btn-danger" onclick="revokeMandate('${m.id}')">Revoke</button>
@@ -767,6 +772,11 @@
         }
 
         function updateChart(history) {
+            if (typeof Chart === 'undefined') {
+                console.warn('Chart.js not available; skipping timeline render.');
+                return;
+            }
+
             if (!history || history.length === 0) return;
 
             const sortedHistory = [...history].reverse();
@@ -786,6 +796,15 @@
             const maxPoints = 20;
             const slicedLabels = labels.slice(-maxPoints);
             const slicedData = dataPoints.slice(-maxPoints);
+
+            if (slicedLabels.length === 0) {
+                if (spendChart) {
+                    spendChart.data.labels = [];
+                    spendChart.data.datasets[0].data = [];
+                    spendChart.update('none');
+                }
+                return;
+            }
 
             const ctx = document.getElementById('spendChart').getContext('2d');
             

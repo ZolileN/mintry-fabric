@@ -2,6 +2,18 @@ import argparse
 import sys
 from mintry.core.wallet import MintryWallet
 
+DEFAULT_DB_PATH = "~/.mintry/vouchers.db"
+
+
+def add_db_argument(parser: argparse.ArgumentParser, *, dest: str, default: str | None):
+    parser.add_argument(
+        "--db",
+        dest=dest,
+        default=default,
+        help=f"Path to the SQLite vouchers database (default: {DEFAULT_DB_PATH})"
+    )
+
+
 def print_table(headers: list[str], rows: list[list[str]]):
     if not rows:
         print("No mandates found.")
@@ -21,8 +33,12 @@ def print_table(headers: list[str], rows: list[list[str]]):
     for row in rows:
         print(template.format(*(str(c) for c in row)))
 
+
+def resolve_db_path(args) -> str:
+    return getattr(args, "db", None) or getattr(args, "global_db", None) or DEFAULT_DB_PATH
+
 def cmd_list(args):
-    wallet = MintryWallet(db_path=args.db)
+    wallet = MintryWallet(db_path=resolve_db_path(args))
     mandates = wallet.list_mandates()
     
     headers = ["Mandate ID", "Status", "Budget (USD)", "Spent (USD)", "Expiry"]
@@ -39,7 +55,7 @@ def cmd_list(args):
     print_table(headers, rows)
 
 def cmd_inspect(args):
-    wallet = MintryWallet(db_path=args.db)
+    wallet = MintryWallet(db_path=resolve_db_path(args))
     mandate_id = args.id
     
     mandate = wallet.get_mandate(mandate_id)
@@ -77,20 +93,17 @@ def cmd_inspect(args):
 
 def cmd_dashboard(args):
     from mintry.core.dashboard import start_dashboard
-    start_dashboard(db_path=args.db, host=args.host, port=args.port)
+    start_dashboard(db_path=resolve_db_path(args), host=args.host, port=args.port)
 
 def main():
     parser = argparse.ArgumentParser(description="Mintry Logic Fabric CLI Utility")
-    parser.add_argument(
-        "--db",
-        default="~/.mintry/vouchers.db",
-        help="Path to the SQLite vouchers database (default: ~/.mintry/vouchers.db)"
-    )
+    add_db_argument(parser, dest="global_db", default=DEFAULT_DB_PATH)
     
     subparsers = parser.add_subparsers(dest="command")
     
     # mandates command group
     mandates_parser = subparsers.add_parser("mandates", help="Manage and inspect mandates")
+    add_db_argument(mandates_parser, dest="db", default=None)
     mandates_subparsers = mandates_parser.add_subparsers(dest="subcommand")
     
     # mandates list subcommand
@@ -104,6 +117,7 @@ def main():
 
     # dashboard subcommand
     dashboard_parser = subparsers.add_parser("dashboard", help="Start the local observability dashboard")
+    add_db_argument(dashboard_parser, dest="db", default=None)
     dashboard_parser.add_argument("--host", default="127.0.0.1", help="Host address to bind to (default: 127.0.0.1)")
     dashboard_parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
     dashboard_parser.set_defaults(func=cmd_dashboard)

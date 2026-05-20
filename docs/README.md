@@ -8,6 +8,7 @@ Welcome to the Mintry Fabric documentation. Use the index below to find what you
 
 | Document | Description |
 |---|---|
+| [Run Locally](RUN_LOCAL.md) | Step-by-step local setup for the CLI, dashboard, smoke testing, and pytest |
 | [Developer Guide](DEVELOPER_GUIDE.md) | End-to-end workflow: onboarding, integration, mandate lifecycle, and architecture overview |
 | [Configuration Reference](CONFIGURATION.md) | Environment variables, database path, SQLite settings, intent filter, and token pricing |
 | [API Reference](API_REFERENCE.md) | Full reference for every public class and method (`mintry.init`, `MintryWallet`, `PolicyEngine`, `GlobalHTTPInterceptor`) |

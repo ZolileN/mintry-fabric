@@ -89,15 +89,20 @@ def test_dashboard_api_stats(temp_db):
     # Access API summary generator directly via a temporary handler configuration
     DashboardHandler.db_path = temp_db
     handler = DashboardHandler.__new__(DashboardHandler)
-    handler.db_path = temp_db
     
     stats_data = handler.get_stats_data()
     
     # Assert KPIs
     assert stats_data["stats"]["total_mandates"] == 3  # seed mandate + 2 new
     assert stats_data["stats"]["total_spent"] >= 1.50   # 1.50 + seed creation or pre-flight fees
+    assert stats_data["stats"]["remaining_headroom"] == pytest.approx(
+        stats_data["stats"]["total_budget"] - stats_data["stats"]["total_spent"],
+        rel=1e-5,
+    )
     assert len(stats_data["mandates"]) == 3
     assert len(stats_data["history"]) >= 4  # seed + dash_01 + dash_02 events
+    dash_01 = next(m for m in stats_data["mandates"] if m["id"] == "dash_01")
+    assert dash_01["remaining_headroom"] == pytest.approx(13.5, rel=1e-5)
 
 
 def test_dashboard_server_http(temp_db):
@@ -129,6 +134,10 @@ def test_dashboard_server_http(temp_db):
             data = res_api.json()
             assert "stats" in data
             assert data["stats"]["total_mandates"] == 2  # seed + dash_http
+            assert data["stats"]["remaining_headroom"] == pytest.approx(
+                data["stats"]["total_budget"] - data["stats"]["total_spent"],
+                rel=1e-5,
+            )
             ids = [m["id"] for m in data["mandates"]]
             assert "dash_http" in ids
     finally:
@@ -184,4 +193,3 @@ def test_dashboard_budget_allocation_flow(temp_db):
     finally:
         server.shutdown()
         server.server_close()
-
