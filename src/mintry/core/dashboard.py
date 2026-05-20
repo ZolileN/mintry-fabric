@@ -25,6 +25,90 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Not Found")
 
+    def do_POST(self):
+        if not self.db_path:
+            self.send_error(500, "Database path not configured.")
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        try:
+            payload = json.loads(post_data.decode('utf-8'))
+        except Exception as e:
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON: " + str(e)}).encode("utf-8"))
+            return
+
+        from mintry.core.wallet import MintryWallet
+        from datetime import datetime
+        wallet = MintryWallet(db_path=self.db_path)
+
+        if self.path == "/api/mandates/upsert":
+            mandate_id = payload.get("id")
+            budget_usd = payload.get("budget_usd")
+            expires_at_str = payload.get("expires_at")
+            
+            if not mandate_id or budget_usd is None:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Missing 'id' or 'budget_usd'"}).encode("utf-8"))
+                return
+
+            expires_at = None
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                except ValueError:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Invalid date format for 'expires_at'. Use ISO8601."}).encode("utf-8"))
+                    return
+
+            try:
+                existing = wallet.get_mandate(mandate_id)
+                if existing.get("status") == "unknown":
+                    wallet.create_mandate(mandate_id, float(budget_usd), expires_at=expires_at)
+                else:
+                    wallet.update_mandate(mandate_id, float(budget_usd), expires_at=expires_at, status="active")
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/mandates/revoke":
+            mandate_id = payload.get("id")
+            if not mandate_id:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Missing mandate 'id'"}).encode("utf-8"))
+                return
+                
+            try:
+                wallet.exhaust_mandate(mandate_id)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+        else:
+            self.send_error(404, "Not Found")
+
     def serve_html(self):
         html_path = Path(__file__).parent / "dashboard.html"
         if not html_path.exists():

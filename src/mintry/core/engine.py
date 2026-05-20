@@ -107,39 +107,42 @@ class PolicyEngine:
         }
 
     @contextmanager
-    def shield(self, task: str, max_usd: float, expires_at: Optional[datetime] = None):
+    def shield(self, task: str, max_usd: Optional[float] = None, expires_at: Optional[datetime] = None):
         """
-        Context manager that creates a scoped mandate for a single task.
+        Context manager that creates or resolves a scoped mandate for a task.
 
-        On entry: creates a new mandate with a UUID-based ID and the given budget.
-        On exit: marks the mandate as exhausted.
-
-        Args:
-            task: Human-readable task description.
-            max_usd: Budget ceiling for this task scope.
-            expires_at: Optional expiry timestamp. If set, the mandate will be
-                       rejected after this time.
-
-        Usage:
-            with engine.shield("analyze-logs", max_usd=0.10) as mandate:
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[...],
-                    extra_headers={"X-Mintry-Mandate": mandate.id}
-                )
+        If max_usd is None, it resolves against pre-allocated dashboard mandates.
+        On exit of a standard scoped mandate, marks it as exhausted.
         """
-        mandate_id = f"mt_{uuid.uuid4().hex[:12]}"
-        self.wallet.create_mandate(mandate_id, float(max_usd), expires_at=expires_at)
+        is_shared = False
+        existing = self.wallet.get_mandate(task)
+        
+        if max_usd is None:
+            if existing.get("status") != "unknown":
+                mandate_id = task
+                max_usd = existing.get("budget_usd", 0.0)
+                is_shared = True
+            else:
+                # Auto-discovery fallback: create a default base mandate
+                mandate_id = task
+                max_usd = 0.05
+                self.wallet.create_mandate(mandate_id, max_usd, expires_at=expires_at)
+                is_shared = True
+        else:
+            mandate_id = f"mt_{uuid.uuid4().hex[:12]}"
+            self.wallet.create_mandate(mandate_id, float(max_usd), expires_at=expires_at)
+
         mandate = Mandate(mandate_id=mandate_id, task=task, max_usd=float(max_usd))
 
         try:
             yield mandate
         finally:
-            self.wallet.exhaust_mandate(mandate_id)
-            mandate_info = self.wallet.get_mandate(mandate_id)
-            self._dispatch_webhook({
-                "event": "mandate_exhausted",
-                "mandate_id": mandate_id,
-                "budget_usd": mandate_info.get("budget_usd", 0.0),
-                "spent_usd": mandate_info.get("spent_usd", 0.0),
-            })
+            if not is_shared:
+                self.wallet.exhaust_mandate(mandate_id)
+                mandate_info = self.wallet.get_mandate(mandate_id)
+                self._dispatch_webhook({
+                    "event": "mandate_exhausted",
+                    "mandate_id": mandate_id,
+                    "budget_usd": mandate_info.get("budget_usd", 0.0),
+                    "spent_usd": mandate_info.get("spent_usd", 0.0),
+                })
