@@ -109,35 +109,35 @@
 - **File:** `src/mintry/interceptors/global_http.py`
 - **Change:** Extract mandate ID from `request.headers.get("X-Mintry-Mandate", "mt_task_882x")` instead of hardcoding. Fall back to a default mandate for backward compatibility.
 - **Effort:** 1 hr
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed (done in Sprint 1)
 
 ### Task 9: Implement Real `shield()` Context Manager
 
 - **File:** `src/mintry/core/engine.py`
 - **Change:** Generate a UUID-based mandate ID, call `wallet.create_mandate()` on entry, yield a mandate object with the `.id`, and optionally mark it exhausted on exit.
 - **Effort:** 1 hr
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed
 
 ### Task 10: Validate `api_key` on Init
 
 - **File:** `src/mintry/__init__.py`
 - **Change:** At minimum, validate that `api_key` is a non-empty string. Store it on the engine for future remote-sync use.
 - **Effort:** 15 min
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed (done in Sprint 1)
 
 ### Task 11: Improve `PermissionError` Messages
 
 - **File:** `src/mintry/interceptors/global_http.py`, `src/mintry/core/engine.py`
 - **Change:** Include `mandate_id`, `budget_usd`, `spent_usd`, and remaining headroom in all `PermissionError` messages.
 - **Effort:** 30 min
-- **Status:** `[ ]`
+- **Status:** `[x]` ✅ Completed
 
 ### Sprint 2 Acceptance Criteria
 
-- [ ] Requests with `X-Mintry-Mandate` header are billed to the correct mandate
-- [ ] `engine.shield()` creates a real mandate and returns a usable context manager
-- [ ] `mintry.init()` rejects empty/missing API keys
-- [ ] Error messages include actionable budget details
+- [x] Requests with `X-Mintry-Mandate` header are billed to the correct mandate
+- [x] `engine.shield()` creates a real mandate and returns a usable context manager
+- [x] `mintry.init()` rejects empty/missing API keys
+- [x] Error messages include actionable budget details
 
 ---
 

@@ -31,7 +31,12 @@ class GlobalHTTPInterceptor:
             # 1. Fiscal Check
             mandate_id = self._get_mandate_id(request)
             if not self.engine.authorize(mandate_id, request):
-                raise PermissionError("Mintry Logic Fabric: Budget Exhausted.")
+                summary = self.engine.get_budget_summary(mandate_id)
+                raise PermissionError(
+                    f"Mintry Logic Fabric: Budget Exhausted for mandate '{summary['mandate_id']}'. "
+                    f"Budget: ${summary['budget_usd']:.4f} | Spent: ${summary['spent_usd']:.4f} | "
+                    f"Remaining: ${summary['remaining_usd']:.4f} (minimum $0.01 required)"
+                )
 
             # 2. Intent Check
             self._check_intent(request)
@@ -51,7 +56,12 @@ class GlobalHTTPInterceptor:
 
                 # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
                 if not engine.authorize(mandate_id, request, deduct=False):
-                    raise PermissionError("Mintry Logic Fabric: Budget Exhausted.")
+                    summary = engine.get_budget_summary(mandate_id)
+                    raise PermissionError(
+                        f"Mintry Logic Fabric: Budget Exhausted for mandate '{summary['mandate_id']}'. "
+                        f"Budget: ${summary['budget_usd']:.4f} | Spent: ${summary['spent_usd']:.4f} | "
+                        f"Remaining: ${summary['remaining_usd']:.4f} (minimum $0.01 required)"
+                    )
 
                 # 2. PRE-FLIGHT — Intent Check
                 try:
