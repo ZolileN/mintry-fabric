@@ -1,119 +1,95 @@
 # Mintry Fabric: Configuration Reference
 
-This document covers all environment variables, runtime settings, and file paths that control Mintry Fabric's behaviour.
+This document describes configuration that is actually implemented in the current codebase.
 
----
+## Function Parameters
+
+The main runtime configuration is passed directly to `mintry.init()`:
+
+```python
+engine = mintry.init(
+    api_key="mk_dev_example",
+    db_path="test_data/local.db",
+    webhook_url="https://example.com/mintry-webhook",
+)
+```
+
+Parameters:
+
+| Name | Default | Description |
+|---|---|---|
+| `api_key` | none | Required non-empty string |
+| `db_path` | `~/.mintry/vouchers.db` | SQLite ledger location |
+| `webhook_url` | `None` | Explicit webhook destination |
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `MINTRY_API_KEY` | ✅ | — | Authentication key issued during onboarding. Passed to `mintry.init()`. |
-| `MINTRY_DB_PATH` | ❌ | `~/.mintry/vouchers.db` | Override the default SQLite ledger path. |
-| `MINTRY_LOG_LEVEL` | ❌ | `INFO` | Controls verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
+These variables are read by the current implementation:
 
-### Setting Variables
-
-Use a `.env` file at your project root (never committed to version control):
-
-```bash
-# .env
-MINTRY_API_KEY=mk_live_xxxxxxxxxxxxx
-MINTRY_DB_PATH=/var/data/mintry/vouchers.db
-```
-
-Load via `python-dotenv` or export in your shell:
-
-```bash
-export MINTRY_API_KEY=mk_live_xxxxxxxxxxxxx
-uv run python your_agent.py
-```
-
----
-
-## Runtime Configuration
-
-### Default Database Path
-
-```
-~/.mintry/vouchers.db
-```
-
-The directory is created automatically on first run. To override:
-
-```python
-from mintry.core.wallet import MintryWallet
-
-wallet = MintryWallet(db_path="/custom/path/vouchers.db")
-```
-
-### SQLite Pragmas
-
-Mintry sets the following SQLite pragmas automatically on every connection:
-
-| Pragma | Value | Reason |
+| Variable | Default | Description |
 |---|---|---|
-| `journal_mode` | `WAL` | Write-Ahead Logging for concurrent reads and atomic writes. |
-| `isolation_level` | `None` | Auto-commit mode; individual SQL statements are their own transactions. |
+| `MINTRY_JSON_LOGS` | unset | When set to `1`, startup and event logs are emitted as JSON |
+| `MINTRY_WEBHOOK_URL` | unset | Fallback webhook URL used by `PolicyEngine` when `webhook_url` is not passed directly |
 
----
+Notes:
 
-## Seed Mandate
+- `MINTRY_API_KEY` is not auto-read by the library today; your application must pass `api_key` to `mintry.init()`
+- `MINTRY_DB_PATH` is not currently consumed by the codebase
 
-On first initialization, the wallet inserts a seed mandate for testing and development:
+## SQLite Behaviour
 
-| Field | Value |
-|---|---|
-| `id` | `mt_task_882x` |
-| `max_usd` | `0.01` |
-| `spent_usd` | `0.0` |
-| `status` | `active` |
+`MintryWallet` currently:
 
-Inserted with `INSERT OR IGNORE` — will not overwrite existing data.
+- expands `~` in the configured DB path
+- creates parent directories automatically
+- opens a connection with `isolation_level=None`
+- enables `PRAGMA journal_mode=WAL`
 
-> **Note:** In production, replace this with real mandates. Do not rely on the seed mandate for production spend tracking.
+Schema:
 
----
+- `mandates`
+- `mandate_audit_log`
 
-## Intent Filter Configuration
+The wallet also seeds the default mandate `mt_task_882x`.
 
-The `GlobalHTTPInterceptor` contains a hardcoded list of prohibited prompt patterns:
+## Intent Filter
 
-```python
-prohibited = [
-    "bypass wallet",
-    "disable mintry",
-    "delete vouchers.db"
-]
-```
+The interceptor blocks requests whose concatenated message text contains any of these lowercased phrases:
 
-Matched against the lowercased concatenation of all message content. A configurable blocklist is planned for a future release.
+- `bypass wallet`
+- `disable mintry`
+- `delete vouchers.db`
 
----
+This list is hardcoded today.
 
-## Token Pricing
+## Pricing Configuration
 
-The cost per token used in post-flight metering is currently hardcoded:
+Built-in pricing lives in `src/mintry/core/pricing.py`.
+
+You can extend it at runtime:
 
 ```python
-actual_cost = (prompt_tokens + completion_tokens) * 0.000005
+from mintry.core.pricing import register_model
+
+register_model("ft:gpt-4o-custom", input_rate=0.00001, output_rate=0.00003)
 ```
 
-This approximates GPT-4o pricing. Configurable per-model pricing is planned for a future release.
+Lookup behaviour:
 
----
+1. exact model match
+2. prefix match for versioned names
+3. fallback default rate
 
-## Security Configuration
+## File Permissions
 
-- Restrict the database file to the owning user:
-  ```bash
-  chmod 600 ~/.mintry/vouchers.db
-  ```
-- Never set `MINTRY_API_KEY` in source code — always use environment variables or a secret manager.
+Recommended local protections:
 
----
+```bash
+chmod 700 ~/.mintry
+chmod 600 ~/.mintry/vouchers.db
+```
 
-## Recommended `.gitignore` Entries
+## Suggested `.gitignore`
 
 ```gitignore
 .env
