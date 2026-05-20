@@ -1,5 +1,7 @@
 # Dashboard-Driven Budget Allocation & Controls - Implementation Summary
 
+> **Note:** This document is a historical implementation record for the dashboard budget controls feature. For current API and configuration reference, see the [docs/](docs/) directory.
+
 ## Overview
 The Dashboard-Driven Budget Allocation & Controls feature has been **fully implemented** and tested. This feature allows CTOs and Administrators to allocate, modify, and revoke mandate budgets directly from the dashboard UI, with instant propagation to the running SDK engine stack.
 
@@ -244,7 +246,7 @@ from mintry.core.dashboard import start_dashboard
 from mintry.core.wallet import MintryWallet
 from mintry.core.engine import PolicyEngine
 
-wallet = MintryWallet(db_path="~/.mintry/mandates.db")
+wallet = MintryWallet(db_path="~/.mintry/vouchers.db")
 engine = PolicyEngine(wallet)
 
 # Start dashboard on port 8000

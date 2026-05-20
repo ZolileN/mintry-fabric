@@ -5,7 +5,8 @@
 | Version | Supported |
 |---|---|
 | `main` / current repository state | Active development |
-| `0.1.x` | Supported baseline release |
+| `0.5.x` | Current release |
+| `0.1.x` | Initial baseline release |
 | older than `0.1.0` | Not supported |
 
 ## Reporting a Vulnerability

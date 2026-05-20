@@ -59,7 +59,7 @@ The implementation currently covers the roadmap milestones through `v0.5.0`:
 
 ### v1.0.0 - Production-Ready Release
 
-- [ ] Resolve remaining known release/documentation mismatches
+- [x] Resolve remaining known release/documentation mismatches
 - [ ] Promote a stable public API and publish the corresponding package version
 - [x] Full sync + async support
 - [x] Complete Python integration and API reference docs
@@ -76,5 +76,6 @@ The implementation currently covers the roadmap milestones through `v0.5.0`:
 
 ## Notes
 
-- The repo still needs release-management cleanup before it should be called `v1.0.0`.
-- Documentation in this folder is written against the current code in `src/mintry`, not against an already-published production release.
+- Package version, CHANGELOG, and documentation are now aligned to the `v0.5.0` feature set.
+- Documentation in this folder is written against the current code in `src/mintry`.
+- Remaining v1.0.0 blockers: Docker packaging, deployment guidance, TypeScript SDK, and stable public API promotion.

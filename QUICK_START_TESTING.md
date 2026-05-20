@@ -63,7 +63,7 @@ Because the mandate already exists, `shield("test_job_001")` reuses it instead o
 The repo includes a small example:
 
 ```bash
-PYTHONPATH=src python3 tests/test_allocated_budget_usage.py --db test_data/local.db
+uv run pytest tests/test_allocated_budget_usage.py
 ```
 
 If the dashboard is open against that same DB path, it will refresh and show the updated spend automatically.
