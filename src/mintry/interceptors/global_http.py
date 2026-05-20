@@ -1,6 +1,8 @@
 import httpx
 import sys
 import json
+import os
+from datetime import datetime, timezone
 
 from mintry.core.pricing import calculate_cost
 
@@ -11,6 +13,16 @@ _LLM_HOSTS = [
     "generativelanguage.googleapis.com",
     "api.mistral.ai",
 ]
+
+
+def _print_log(event: str, **kwargs):
+    if os.environ.get("MINTRY_JSON_LOGS") == "1":
+        log_payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            **kwargs
+        }
+        print(json.dumps(log_payload), flush=True)
 
 
 def _is_llm_request(url: str) -> bool:
@@ -44,6 +56,8 @@ class GlobalHTTPInterceptor:
 
             prohibited = ["bypass wallet", "disable mintry", "delete vouchers.db"]
             if any(p in prompt for p in prohibited):
+                mandate_id = self._get_mandate_id(request)
+                _print_log("security_violation", mandate_id=mandate_id, reason="prohibited_intent", prompt=prompt)
                 raise PermissionError("Mintry Logic Fabric: Prohibited Intent Detected (Security Violation).")
         except json.JSONDecodeError:
             pass
@@ -55,6 +69,14 @@ class GlobalHTTPInterceptor:
     def _raise_budget_error(self, engine, mandate_id: str):
         """Raise a PermissionError with budget details."""
         summary = engine.get_budget_summary(mandate_id)
+        reason = "expired" if summary.get("expired") else "budget_exhausted"
+        _print_log(
+            "authorization_failed", 
+            mandate_id=mandate_id, 
+            reason=reason, 
+            budget_usd=summary.get("budget_usd"), 
+            spent_usd=summary.get("spent_usd")
+        )
         if summary.get("expired"):
             raise PermissionError(
                 f"Mintry Logic Fabric: Mandate '{summary['mandate_id']}' has expired. "
@@ -77,6 +99,14 @@ class GlobalHTTPInterceptor:
 
         actual_cost = calculate_cost(model, prompt_tokens, completion_tokens)
         engine.wallet.record_usage(mandate_id, actual_cost)
+        _print_log(
+            "spend_metered", 
+            mandate_id=mandate_id, 
+            cost=actual_cost, 
+            model=model, 
+            prompt_tokens=prompt_tokens, 
+            completion_tokens=completion_tokens
+        )
 
     def sync_intercept(self, request: httpx.Request):
         if _is_llm_request(str(request.url)):
@@ -158,7 +188,10 @@ class GlobalHTTPInterceptor:
         httpx.Client.send = patched_send
         httpx.AsyncClient.send = patched_async_send
         GlobalHTTPInterceptor._installed = True
-        print("✨ Mintry Logic Fabric Hooked into HTTPX (sync + async)")
+        if os.environ.get("MINTRY_JSON_LOGS") == "1":
+            _print_log("hooks_installed", status="success", sync=True, async_=True)
+        else:
+            print("✨ Mintry Logic Fabric Hooked into HTTPX (sync + async)")
 
     @classmethod
     def _reset(cls):

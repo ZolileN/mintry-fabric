@@ -4,9 +4,9 @@ This roadmap outlines planned features, improvements, and milestones. It is a li
 
 ---
 
-## Current Release: v0.3.0
+## Current Release: v0.5.0
 
-Core Logic Fabric is live with synchronous and asynchronous HTTPX interception, multi-provider token metering (OpenAI, Anthropic, Gemini, Mistral), per-model pricing lookup, and cryptographic mandate validation (ES256 + expiry).
+Core Logic Fabric is live with synchronous and asynchronous HTTPX interception, multi-provider token metering (OpenAI, Anthropic, Gemini, Mistral), per-model pricing lookup, cryptographic mandate validation (ES256 + expiry), embedded dark-themed glassmorphism dashboard, and JSON/webhook alerts.
 
 ---
 
@@ -61,10 +61,10 @@ Core Logic Fabric is live with synchronous and asynchronous HTTPX interception, 
 
 > Real-time visibility into agent spend and mandate health.
 
-- [ ] Local web dashboard (Spend by mandate, time-series chart, top agents by cost)
-- [ ] Structured JSON log output for integration with Datadog, Grafana, or similar
-- [ ] Webhook support for mandate exhaustion events
-- [ ] Remote sync of ledger data to Mintry monitoring plane
+- [x] Local web dashboard (Spend by mandate, time-series chart, top agents by cost)
+- [x] Structured JSON log output for integration with Datadog, Grafana, or similar
+- [x] Webhook support for mandate exhaustion events
+- [x] Remote sync of ledger data to Mintry monitoring plane (background client hooks built)
 
 ---
 

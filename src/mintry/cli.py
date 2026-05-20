@@ -75,6 +75,10 @@ def cmd_inspect(args):
         ]
         print_table(headers, rows)
 
+def cmd_dashboard(args):
+    from mintry.core.dashboard import start_dashboard
+    start_dashboard(db_path=args.db, host=args.host, port=args.port)
+
 def main():
     parser = argparse.ArgumentParser(description="Mintry Logic Fabric CLI Utility")
     parser.add_argument(
@@ -97,6 +101,12 @@ def main():
     inspect_parser = mandates_subparsers.add_parser("inspect", help="Inspect a specific mandate and its audit log")
     inspect_parser.add_argument("id", help="The mandate ID to inspect")
     inspect_parser.set_defaults(func=cmd_inspect)
+
+    # dashboard subcommand
+    dashboard_parser = subparsers.add_parser("dashboard", help="Start the local observability dashboard")
+    dashboard_parser.add_argument("--host", default="127.0.0.1", help="Host address to bind to (default: 127.0.0.1)")
+    dashboard_parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
+    dashboard_parser.set_defaults(func=cmd_dashboard)
     
     args = parser.parse_args()
     

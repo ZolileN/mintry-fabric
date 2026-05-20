@@ -1,4 +1,7 @@
 import uuid
+import os
+import threading
+import httpx
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -17,9 +20,24 @@ class Mandate:
 
 
 class PolicyEngine:
-    def __init__(self, wallet):
+    def __init__(self, wallet, webhook_url: Optional[str] = None):
         self.wallet = wallet
         self.api_key = None
+        self.webhook_url = webhook_url or os.environ.get("MINTRY_WEBHOOK_URL")
+
+    def _dispatch_webhook(self, payload: dict):
+        """Dispatches a webhook POST request asynchronously in a background thread."""
+        if not self.webhook_url:
+            return
+        
+        def _send():
+            try:
+                with httpx.Client(timeout=2.0) as client:
+                    client.post(self.webhook_url, json=payload)
+            except Exception:
+                pass
+                
+        threading.Thread(target=_send, daemon=True).start()
 
     def authorize(self, mandate_id: str, request, deduct: bool = True):
         """
@@ -33,6 +51,14 @@ class PolicyEngine:
         """
         # Phase 1: Expiry check
         if self.wallet.is_expired(mandate_id):
+            mandate = self.wallet.get_mandate(mandate_id)
+            self._dispatch_webhook({
+                "event": "authorization_failed",
+                "reason": "expired",
+                "mandate_id": mandate_id,
+                "budget_usd": mandate.get("budget_usd", 0.0),
+                "spent_usd": mandate.get("spent_usd", 0.0),
+            })
             return False
 
         # Phase 2: Budget check
@@ -40,10 +66,24 @@ class PolicyEngine:
 
         # Reject exhausted mandates
         if mandate.get("status") == "exhausted":
+            self._dispatch_webhook({
+                "event": "authorization_failed",
+                "reason": "budget_exhausted",
+                "mandate_id": mandate_id,
+                "budget_usd": mandate.get("budget_usd", 0.0),
+                "spent_usd": mandate.get("spent_usd", 0.0),
+            })
             return False
 
         remaining = mandate['budget_usd'] - mandate['spent_usd']
         if remaining < 0.01:
+            self._dispatch_webhook({
+                "event": "authorization_failed",
+                "reason": "budget_exhausted",
+                "mandate_id": mandate_id,
+                "budget_usd": mandate.get("budget_usd", 0.0),
+                "spent_usd": mandate.get("spent_usd", 0.0),
+            })
             return False
 
         # Phase 3: Apply base fee only if we aren't metering tokens post-flight
@@ -96,3 +136,10 @@ class PolicyEngine:
             yield mandate
         finally:
             self.wallet.exhaust_mandate(mandate_id)
+            mandate_info = self.wallet.get_mandate(mandate_id)
+            self._dispatch_webhook({
+                "event": "mandate_exhausted",
+                "mandate_id": mandate_id,
+                "budget_usd": mandate_info.get("budget_usd", 0.0),
+                "spent_usd": mandate_info.get("spent_usd", 0.0),
+            })
