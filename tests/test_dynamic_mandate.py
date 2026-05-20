@@ -110,9 +110,8 @@ def test_budget_exhausted_error_includes_details(tmp_path):
 
         # Verify actionable details are present
         assert "broke_mandate" in full_msg
-        assert "Budget:" in full_msg
-        assert "Spent:" in full_msg
-        assert "Remaining:" in full_msg
+        assert "Hard Cap:" in full_msg
+        assert "Spend:" in full_msg
         print(f"\n[SUCCESS] Error message includes details: {e}")
 
 

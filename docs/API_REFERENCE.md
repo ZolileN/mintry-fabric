@@ -12,7 +12,7 @@ Parameters:
 
 | Name | Type | Description |
 |---|---|---|
-| `api_key` | `str` | Required non-empty string. Stored on the engine instance for integration use. |
+| `api_key` | `str | None` | Optional string. Stored on the engine instance for integration use. If not provided, falls back to `MINTRY_API_KEY` environment variable. |
 | `db_path` | `str` | SQLite ledger path. Defaults to `~/.mintry/vouchers.db`. |
 | `webhook_url` | `str | None` | Optional webhook endpoint for authorization-failure and shield-exhaustion events. |
 
@@ -22,13 +22,59 @@ Returns:
 
 Raises:
 
-- `ValueError` if `api_key` is empty or not a string
+- `ValueError` if `api_key` is not provided and `MINTRY_API_KEY` environment variable is not set.
 
 Side effects:
 
 - creates the SQLite ledger if needed
 - installs sync and async HTTPX patches once per process
 - prints startup messages unless `MINTRY_JSON_LOGS=1`
+
+### `mintry.mandate(task, cap)`
+
+Top-level context manager that wraps the engine's `shield()` logic.
+
+Usage:
+
+```python
+import mintry
+
+mintry.init()
+
+with mintry.mandate("task:nightly_summarizer", cap=50.00):
+    # your code
+```
+
+Parameters:
+
+| Name | Type | Description |
+|---|---|---|
+| `task` | `str` | Name of the task or existing mandate ID. |
+| `cap` | `float` | The budget ceiling (`max_usd`). |
+
+Returns:
+
+- `Mandate` object
+
+Side effects:
+
+- Auto-initializes the global engine if `mintry.init()` has not been called but `MINTRY_API_KEY` is set in the environment.
+
+## Exceptions
+
+```python
+from mintry.core.exceptions import MintryMandateExceeded
+```
+
+### `MintryMandateExceeded`
+
+Inherits from `PermissionError`. Raised when an agent's request is blocked by transport-layer budget constraints.
+
+Attributes:
+
+- `task` (str): The mandate ID or task name that was exceeded.
+- `cap` (float): The budget ceiling (`max_usd`) for the mandate.
+- `spent` (float): The current attributed spend at the time of rejection.
 
 ## `MintryWallet`
 

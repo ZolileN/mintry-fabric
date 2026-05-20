@@ -76,7 +76,7 @@ async def test_async_budget_enforcement(tmp_path):
     fabric.wallet.record_usage("broke_async", 0.005)
 
     async with httpx.AsyncClient() as client:
-        with pytest.raises(PermissionError, match="Budget Exhausted"):
+        with pytest.raises(PermissionError, match="Mintry Shield"):
             await client.post(
                 "https://api.openai.com/v1/chat/completions",
                 json={"model": "gpt-4o", "messages": [{"role": "user", "content": "test"}]},

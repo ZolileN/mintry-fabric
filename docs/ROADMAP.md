@@ -64,7 +64,8 @@ The implementation currently covers the roadmap milestones through `v0.5.0`:
 - [x] Full sync + async support
 - [x] Complete Python integration and API reference docs
 - [ ] Docker-based deployment option for a shared team ledger
-- [ ] SDK clients for TypeScript/JavaScript ecosystems
+- [ ] SDK clients for TypeScript/JavaScript ecosystems (v0.6.0 - Completed)
+- [ ] Language-agnostic Sidecar Proxy (Go Daemon) to replace library monkey-patching
 - [ ] Clear deployment guidance for multi-process and multi-host usage
 
 ## Ideas Under Consideration
