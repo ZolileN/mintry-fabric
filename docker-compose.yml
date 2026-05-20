@@ -1,0 +1,41 @@
+# Example docker-compose.yml for Mintry Fabric Shared Ledger Deployment
+# 
+# This file demonstrates the recommended single-host deployment pattern where 
+# an application container and the Mintry dashboard container share the same 
+# SQLite ledger (vouchers.db) through a Docker volume.
+
+version: '3.8'
+
+services:
+  # The central observability dashboard
+  dashboard:
+    build: .
+    container_name: mintry-dashboard
+    ports:
+      - "8000:8000"
+    volumes:
+      # Both containers must mount this volume to the same path
+      # or explicitly configure the DB path via environment variables
+      - mintry-data:/root/.mintry
+    restart: unless-stopped
+
+  # Example application container
+  # In a real deployment, your app would be built from your own Dockerfile
+  # and use the Python or Node.js SDK to interact with the shared ledger.
+  app:
+    image: node:22-slim
+    container_name: mintry-app
+    # Keeping the container alive for demonstration purposes
+    command: ["sleep", "infinity"]
+    volumes:
+      - mintry-data:/root/.mintry
+    environment:
+      - MINTRY_API_KEY=your_production_key_here
+      # Optional: Explicitly configure where the SDK should look for the DB
+      # - MINTRY_DB_PATH=/root/.mintry/vouchers.db
+    restart: unless-stopped
+
+volumes:
+  mintry-data:
+    # A persistent Docker volume to store vouchers.db securely across container restarts
+    driver: local

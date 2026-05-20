@@ -8,6 +8,22 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) 
 
 _No unreleased changes._
 
+## [1.0.0] - 2026-05-20
+
+### Added
+
+- Official TypeScript/Node.js SDK (`mintry-node`) mirroring Python ergonomics via `AsyncLocalStorage`.
+- Official Docker packaging (`Dockerfile` & `docker-compose.yml`) for the shared ledger deployment model.
+- `docs/RELEASE_NOTES_v1.0.0.md` detailing the production launch.
+- `ADR-003-sidecar-proxy.md` establishing the future Go daemon architecture.
+- Frozen public API surface using `__all__` in `__init__.py`.
+
+### Changed
+
+- Replaced generic `PermissionError` with structured `MintryMandateExceeded` exceptions.
+- `mintry.init()` now automatically resolves the API key from the `MINTRY_API_KEY` environment variable.
+- Exposed the `mintry.mandate` top-level context manager to fulfill the "Three Lines" marketing promise.
+
 ## [0.5.0] - 2026-05-20
 
 ### Added
@@ -94,7 +110,8 @@ _No unreleased changes._
 - `AP2IntentMandate` model scaffold
 - Stripe mock bridge helper
 
-[Unreleased]: https://github.com/ZolileN/mintry-fabric/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ZolileN/mintry-fabric/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.2.0...v0.3.0
