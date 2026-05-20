@@ -1,14 +1,25 @@
 import pytest
 import mintry
+from mintry.interceptors.global_http import GlobalHTTPInterceptor
 from openai import OpenAI
 from decimal import Decimal
 
-def test_real_time_metering(httpx_mock):
-    # Initialize Fabric and Wallet
-    fabric = mintry.init(api_key="test_key_2026")
+
+@pytest.fixture(autouse=True)
+def isolate_fabric(tmp_path):
+    """Reset the interceptor and use a fresh temp database for every test."""
+    GlobalHTTPInterceptor._reset()
+    yield
+    GlobalHTTPInterceptor._reset()
+
+
+def test_real_time_metering(httpx_mock, tmp_path):
+    # Initialize Fabric with an isolated temp database
+    db = str(tmp_path / "vouchers.db")
+    fabric = mintry.init(api_key="test_key_2026", db_path=db)
     client = OpenAI(api_key="sk-mock-key")
     mandate_id = "mt_task_882x"
-    
+
     # 1. Capture initial spend
     initial_spent = fabric.wallet.get_spent(mandate_id)
 
@@ -43,7 +54,7 @@ def test_real_time_metering(httpx_mock):
     # 3. Verify the Ledger
     final_spent = fabric.wallet.get_spent(mandate_id)
     delta = final_spent - initial_spent
-    
+
     print(f"[TEST] Initial Spent: ${initial_spent:.6f}")
     print(f"[TEST] Final Spent: ${final_spent:.6f}")
     print(f"[TEST] Calculated Delta: ${delta:.6f}")

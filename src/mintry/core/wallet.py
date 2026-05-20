@@ -1,4 +1,5 @@
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 class MintryWallet:
@@ -74,3 +75,17 @@ class MintryWallet:
             (mandate_id,)
         ).fetchone()
         return row[0] if row else 0.0
+
+    def create_mandate(self, mandate_id: str, max_usd: float):
+        """Create a new mandate with the given budget ceiling."""
+        self.conn.execute(
+            "INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) VALUES (?, ?, 0.0, 'active')",
+            (mandate_id, float(max_usd))
+        )
+
+    def exhaust_mandate(self, mandate_id: str):
+        """Mark a mandate as exhausted, preventing further spend."""
+        self.conn.execute(
+            "UPDATE mandates SET status = 'exhausted' WHERE id = ?",
+            (mandate_id,)
+        )
