@@ -4,6 +4,8 @@ from mintry.core.wallet import MintryWallet
 
 from typing import Optional
 
+__version__ = "0.5.0"
+
 def init(api_key: str, db_path: str = "~/.mintry/vouchers.db", webhook_url: Optional[str] = None):
     """
     Initializes the Mintry Logic Fabric globally.

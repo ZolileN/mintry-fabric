@@ -125,6 +125,8 @@ Authorization flow:
 
 Returns `True` when the request may proceed and `False` when it should be blocked.
 
+> **Note:** The global HTTPX interceptor calls `authorize(…, deduct=False)` and relies on post-flight metering instead. The `deduct=True` path is only used when calling `authorize()` directly or through legacy `sync_intercept()`.
+
 ### `get_budget_summary(mandate_id) -> dict`
 
 Returns a structured summary with:
@@ -189,7 +191,7 @@ For intercepted requests, Mintry:
 
 ### `_reset() -> None`
 
-Testing helper that restores the original HTTPX send methods and clears install state.
+Internal testing helper that restores the original HTTPX send methods and clears install state. This is not part of the public API and should only be used in test fixtures for clean isolation between test cases.
 
 ## Pricing Helpers
 

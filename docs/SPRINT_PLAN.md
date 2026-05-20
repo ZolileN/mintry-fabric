@@ -54,7 +54,7 @@ The test suite now covers:
 
 ### Release Readiness
 
-- [ ] reconcile package versioning with implemented feature set
+- [x] reconcile package versioning with implemented feature set
 - [ ] run the full test suite in a clean synced environment and record the release baseline
 - [ ] tighten docs around supported deployment models
 

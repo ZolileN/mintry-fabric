@@ -89,7 +89,7 @@ uv run pytest tests/test_sprint3.py
 
 ## Current Release Status
 
-The codebase implements most roadmap milestones through the `v0.5.0` feature set, but the published package metadata and release notes have not yet been promoted to a `v1.0.0` production-ready release. See [docs/ROADMAP.md](docs/ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md) for the current state.
+The codebase implements roadmap milestones through the `v0.5.0` feature set, and the package version reflects this. See [docs/ROADMAP.md](docs/ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md) for the current state and remaining work before `v1.0.0`.
 
 ## License
 
