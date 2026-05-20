@@ -7,7 +7,15 @@ from mintry.core.engine import PolicyEngine
 from mintry.core.wallet import MintryWallet
 from mintry.core.exceptions import MintryMandateExceeded
 
-__version__ = "0.5.0"
+__version__ = "1.0.0"
+
+__all__ = [
+    "init",
+    "mandate",
+    "MintryMandateExceeded",
+    "PolicyEngine",
+    "MintryWallet",
+]
 
 # ── Global state ─────────────────────────────────────────────────────
 _global_engine: Optional[PolicyEngine] = None

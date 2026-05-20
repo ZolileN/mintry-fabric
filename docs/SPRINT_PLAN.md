@@ -67,17 +67,17 @@ The test suite now covers:
 ### Release Readiness
 
 - [x] reconcile package versioning with implemented feature set
-- [ ] run the full test suite in a clean synced environment and record the release baseline
-- [ ] tighten docs around supported deployment models
+- [x] run the full test suite in a clean synced environment and record the release baseline (`RELEASE_BASELINE.md`)
+- [x] tighten docs around supported deployment models (`DEPLOYMENT.md`)
 
 ### Production Packaging
 
-- [ ] add Docker packaging for a shared ledger deployment option
-- [ ] define and freeze the supported public API surface
-- [ ] prepare release notes for the first post-`0.1.0` tagged release
+- [x] add Docker packaging for a shared ledger deployment option (`Dockerfile`, `docker-compose.yml`)
+- [x] define and freeze the supported public API surface (`__all__` in `__init__.py`)
+- [x] prepare release notes for the first post-`0.1.0` tagged release (`RELEASE_NOTES_v1.0.0.md`)
 
 ### Ecosystem Expansion
 
-- [ ] TypeScript/JavaScript SDK
+- [x] TypeScript/JavaScript SDK (`mintry-node` package in Phase 2)
 - [ ] configurable policy surface for blocklists and defaults
 - [ ] optional remote sync client implementation beyond local hooks
