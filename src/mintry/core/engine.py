@@ -1,5 +1,7 @@
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
+from typing import Optional
 
 
 class Mandate:
@@ -21,20 +23,30 @@ class PolicyEngine:
 
     def authorize(self, mandate_id: str, request, deduct: bool = True):
         """
-        Performs a two-phase budget check for an outbound request.
+        Performs a three-phase budget check for an outbound request.
 
-        Phase 1 — Safety threshold: ensures at least $0.01 headroom.
-        Phase 2 — Base fee deduction (if deduct=True).
+        Phase 1 — Expiry check: rejects expired mandates.
+        Phase 2 — Safety threshold: ensures at least $0.01 headroom.
+        Phase 3 — Base fee deduction (if deduct=True).
 
-        Returns True if authorized, False if budget is exhausted.
+        Returns True if authorized, False if budget is exhausted or mandate expired.
         """
-        mandate = self.wallet.get_mandate(mandate_id)
-        remaining = mandate['budget_usd'] - mandate['spent_usd']
+        # Phase 1: Expiry check
+        if self.wallet.is_expired(mandate_id):
+            return False
 
+        # Phase 2: Budget check
+        mandate = self.wallet.get_mandate(mandate_id)
+
+        # Reject exhausted mandates
+        if mandate.get("status") == "exhausted":
+            return False
+
+        remaining = mandate['budget_usd'] - mandate['spent_usd']
         if remaining < 0.01:
             return False
 
-        # Apply base fee only if we aren't metering tokens post-flight
+        # Phase 3: Apply base fee only if we aren't metering tokens post-flight
         if deduct:
             self.wallet.record_usage(mandate_id, 0.002)
 
@@ -44,20 +56,29 @@ class PolicyEngine:
         """Returns a budget summary with remaining headroom for error messages."""
         mandate = self.wallet.get_mandate(mandate_id)
         remaining = mandate['budget_usd'] - mandate['spent_usd']
+        is_expired = self.wallet.is_expired(mandate_id)
         return {
             "mandate_id": mandate_id,
             "budget_usd": mandate['budget_usd'],
             "spent_usd": mandate['spent_usd'],
             "remaining_usd": round(remaining, 6),
+            "status": mandate.get("status", "unknown"),
+            "expired": is_expired,
         }
 
     @contextmanager
-    def shield(self, task: str, max_usd: float):
+    def shield(self, task: str, max_usd: float, expires_at: Optional[datetime] = None):
         """
         Context manager that creates a scoped mandate for a single task.
 
         On entry: creates a new mandate with a UUID-based ID and the given budget.
         On exit: marks the mandate as exhausted.
+
+        Args:
+            task: Human-readable task description.
+            max_usd: Budget ceiling for this task scope.
+            expires_at: Optional expiry timestamp. If set, the mandate will be
+                       rejected after this time.
 
         Usage:
             with engine.shield("analyze-logs", max_usd=0.10) as mandate:
@@ -68,7 +89,7 @@ class PolicyEngine:
                 )
         """
         mandate_id = f"mt_{uuid.uuid4().hex[:12]}"
-        self.wallet.create_mandate(mandate_id, float(max_usd))
+        self.wallet.create_mandate(mandate_id, float(max_usd), expires_at=expires_at)
         mandate = Mandate(mandate_id=mandate_id, task=task, max_usd=float(max_usd))
 
         try:

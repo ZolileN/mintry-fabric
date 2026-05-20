@@ -1,6 +1,9 @@
 import sqlite3
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
+
 
 class MintryWallet:
     def __init__(self, db_path="~/.mintry/vouchers.db"):
@@ -12,16 +15,23 @@ class MintryWallet:
 
     def _init_db(self):
         self.conn.execute("PRAGMA journal_mode=WAL")
-        # Ensure the table matches our 2026 spec: ID, Max, Spent, Status
+        # Ensure the table matches our 2026 spec: ID, Max, Spent, Status, Expires
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS mandates (
                 id TEXT PRIMARY KEY, 
                 max_usd REAL, 
                 spent_usd REAL DEFAULT 0,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                expires_at TEXT DEFAULT NULL
             )
         """)
-        
+
+        # Add expires_at column if upgrading from an older schema
+        try:
+            self.conn.execute("ALTER TABLE mandates ADD COLUMN expires_at TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
         # Explicitly name the columns so we don't hit the 4-column vs 3-value error
         self.conn.execute("""
             INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) 
@@ -52,15 +62,26 @@ class MintryWallet:
     def get_mandate(self, mandate_id):
         """Fetch mandate data from the SQLite database."""
         row = self.conn.execute(
-            "SELECT max_usd, spent_usd FROM mandates WHERE id = ?", 
+            "SELECT max_usd, spent_usd, status, expires_at FROM mandates WHERE id = ?", 
             (mandate_id,)
         ).fetchone()
         
         if row:
-            # Match the keys the PolicyEngine expects: 'budget_usd' and 'spent_usd'
-            return {"budget_usd": row[0], "spent_usd": row[1]}
+            expires_at = None
+            if row[3]:
+                try:
+                    expires_at = datetime.fromisoformat(row[3])
+                except (ValueError, TypeError):
+                    pass
+
+            return {
+                "budget_usd": row[0],
+                "spent_usd": row[1],
+                "status": row[2],
+                "expires_at": expires_at,
+            }
         
-        return {"budget_usd": 0.0, "spent_usd": 0.0}
+        return {"budget_usd": 0.0, "spent_usd": 0.0, "status": "unknown", "expires_at": None}
 
     def record_usage(self, mandate_id, actual_cost):
         """Adjusts the spent_usd based on actual token usage."""
@@ -76,11 +97,12 @@ class MintryWallet:
         ).fetchone()
         return row[0] if row else 0.0
 
-    def create_mandate(self, mandate_id: str, max_usd: float):
-        """Create a new mandate with the given budget ceiling."""
+    def create_mandate(self, mandate_id: str, max_usd: float, expires_at: Optional[datetime] = None):
+        """Create a new mandate with the given budget ceiling and optional expiry."""
+        expires_str = expires_at.isoformat() if expires_at else None
         self.conn.execute(
-            "INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) VALUES (?, ?, 0.0, 'active')",
-            (mandate_id, float(max_usd))
+            "INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status, expires_at) VALUES (?, ?, 0.0, 'active', ?)",
+            (mandate_id, float(max_usd), expires_str)
         )
 
     def exhaust_mandate(self, mandate_id: str):
@@ -89,3 +111,15 @@ class MintryWallet:
             "UPDATE mandates SET status = 'exhausted' WHERE id = ?",
             (mandate_id,)
         )
+
+    def is_expired(self, mandate_id: str) -> bool:
+        """Check if a mandate has passed its expiry time."""
+        mandate = self.get_mandate(mandate_id)
+        if mandate["expires_at"] is None:
+            return False
+        now = datetime.now(timezone.utc)
+        expires = mandate["expires_at"]
+        # Ensure timezone-aware comparison
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return now >= expires
