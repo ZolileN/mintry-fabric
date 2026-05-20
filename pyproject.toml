@@ -16,6 +16,9 @@ dependencies = [
     "openai",
 ]
 
+[project.scripts]
+mintry = "mintry.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",

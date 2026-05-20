@@ -4,9 +4,9 @@ This roadmap outlines planned features, improvements, and milestones. It is a li
 
 ---
 
-## Current Release: v0.1.0
+## Current Release: v0.3.0
 
-Core Logic Fabric is live with synchronous HTTPX interception, SQLite-backed mandate ledger, and basic intent filtering.
+Core Logic Fabric is live with synchronous and asynchronous HTTPX interception, multi-provider token metering (OpenAI, Anthropic, Gemini, Mistral), per-model pricing lookup, and cryptographic mandate validation (ES256 + expiry).
 
 ---
 
@@ -14,11 +14,11 @@ Core Logic Fabric is live with synchronous HTTPX interception, SQLite-backed man
 
 > Bug fixes and known limitations from the initial release.
 
-- [ ] Fix `Decimal` import missing in `wallet.add_funds`
-- [ ] Fix hardcoded `mt_task_882x` mandate ID in `GlobalHTTPInterceptor` — route dynamically via `X-Mintry-Mandate` header
-- [ ] Add `MintryWallet.create_mandate(mandate_id, max_usd)` public method
-- [ ] Add `MintryWallet.exhaust_mandate(mandate_id)` for cleanup
-- [ ] Improve error messaging to include mandate ID and remaining budget in `PermissionError`
+- [x] Fix `Decimal` import missing in `wallet.add_funds`
+- [x] Fix hardcoded `mt_task_882x` mandate ID in `GlobalHTTPInterceptor` — route dynamically via `X-Mintry-Mandate` header
+- [x] Add `MintryWallet.create_mandate(mandate_id, max_usd)` public method
+- [x] Add `MintryWallet.exhaust_mandate(mandate_id)` for cleanup
+- [x] Improve error messaging to include mandate ID and remaining budget in `PermissionError`
 
 ---
 
@@ -26,10 +26,10 @@ Core Logic Fabric is live with synchronous HTTPX interception, SQLite-backed man
 
 > Unblock teams using async agent frameworks.
 
-- [ ] Patch `httpx.AsyncClient.send` for full async interception
-- [ ] Support `asyncio`-safe SQLite writes (connection-per-thread or `aiosqlite`)
-- [ ] Async-compatible `PolicyEngine.authorize`
-- [ ] Update test suite with async fixtures
+- [x] Patch `httpx.AsyncClient.send` for full async interception
+- [x] Support `asyncio`-safe SQLite writes (connection-per-thread or `aiosqlite`)
+- [x] Async-compatible `PolicyEngine.authorize`
+- [x] Update test suite with async fixtures
 
 ---
 
@@ -37,11 +37,11 @@ Core Logic Fabric is live with synchronous HTTPX interception, SQLite-backed man
 
 > Extend beyond OpenAI to cover the full LLM provider landscape.
 
-- [ ] Anthropic (`api.anthropic.com`) token metering
-- [ ] Google Gemini (`generativelanguage.googleapis.com`) token metering
-- [ ] Mistral (`api.mistral.ai`) token metering
-- [ ] Per-provider token pricing table (configurable, with live update mechanism)
-- [ ] Provider-agnostic mandate routing
+- [x] Anthropic (`api.anthropic.com`) token metering
+- [x] Google Gemini (`generativelanguage.googleapis.com`) token metering
+- [x] Mistral (`api.mistral.ai`) token metering
+- [x] Per-provider token pricing table (configurable, with live update mechanism)
+- [x] Provider-agnostic mandate routing
 
 ---
 
@@ -49,11 +49,11 @@ Core Logic Fabric is live with synchronous HTTPX interception, SQLite-backed man
 
 > Full mandate management for production use.
 
-- [ ] Mandate expiry enforcement using `AP2IntentMandate.expires_at`
-- [ ] `AP2IntentMandate` signature verification (BBS+, ES256)
-- [ ] Mandate status transitions: `active` → `exhausted` → `expired`
-- [ ] Mandate audit log (immutable append-only table)
-- [ ] CLI: `mintry mandates list`, `mintry mandates inspect <id>`
+- [x] Mandate expiry enforcement using `AP2IntentMandate.expires_at`
+- [x] `AP2IntentMandate` signature verification (BBS+, ES256)
+- [x] Mandate status transitions: `active` → `exhausted` → `expired`
+- [x] Mandate audit log (immutable append-only table)
+- [x] CLI: `mintry mandates list`, `mintry mandates inspect <id>`
 
 ---
 
@@ -85,7 +85,7 @@ Core Logic Fabric is live with synchronous HTTPX interception, SQLite-backed man
 
 These are not yet scheduled but have been discussed:
 
-- **Per-model pricing overrides** — Let teams configure custom rates for fine-tuned models.
+- **Per-model pricing overrides** — [x] Completed (via `register_model` pricing API)
 - **Shared ledger mode** — One central `vouchers.db` served over a local network for multi-agent teams.
 - **VS Code extension** — Inline spend display while writing agent code.
 - **Stripe top-up automation** — Automatically top up mandates via Stripe when spend approaches the ceiling.
