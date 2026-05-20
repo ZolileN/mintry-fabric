@@ -148,6 +148,19 @@ class MintryWallet:
             details += f" and expiry {expires_str}"
         self._log_event(mandate_id, "create", max_usd, details)
 
+    def update_mandate(self, mandate_id: str, max_usd: float, expires_at: Optional[datetime] = None, status: str = "active"):
+        """Update an existing mandate's ceiling, status, and expiry."""
+        expires_str = expires_at.isoformat() if expires_at else None
+        current = self.get_mandate(mandate_id)
+        self.conn.execute(
+            "UPDATE mandates SET max_usd = ?, status = ?, expires_at = ? WHERE id = ?",
+            (float(max_usd), status, expires_str, mandate_id)
+        )
+        details = f"Updated budget ceiling to ${max_usd:.4f} (was ${current['budget_usd']:.4f}), status set to '{status}'"
+        if expires_str:
+            details += f", expiry set to {expires_str}"
+        self._log_event(mandate_id, "top_up", float(max_usd) - current['budget_usd'], details)
+
     def exhaust_mandate(self, mandate_id: str):
         """Mark a mandate as exhausted, preventing further spend."""
         self.conn.execute(

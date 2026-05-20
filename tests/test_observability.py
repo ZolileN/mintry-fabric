@@ -134,3 +134,54 @@ def test_dashboard_server_http(temp_db):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_dashboard_budget_allocation_flow(temp_db):
+    """Verify that allocating and revoking budgets via dashboard endpoints works and propagates to SDK."""
+    wallet = MintryWallet(db_path=temp_db)
+    engine = PolicyEngine(wallet)
+
+    DashboardHandler.db_path = temp_db
+    server = HTTPServer(("127.0.0.1", 0), DashboardHandler)
+    port = server.server_port
+    
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    time.sleep(0.1)
+
+    try:
+        with httpx.Client() as client:
+            # 1. Allocate budget via dashboard upsert
+            payload_upsert = {
+                "id": "dashboard_allocated_task",
+                "budget_usd": 150.0,
+                "expires_at": "2026-12-31T23:59:59Z"
+            }
+            res_upsert = client.post(f"http://127.0.0.1:{port}/api/mandates/upsert", json=payload_upsert)
+            assert res_upsert.status_code == 200
+            assert res_upsert.json()["success"] is True
+
+            # Verify in SDK engine
+            with engine.shield("dashboard_allocated_task") as mandate:
+                assert mandate.id == "dashboard_allocated_task"
+                assert mandate.max_usd == 150.0
+                
+                # Check pre-flight authorization works
+                auth_ok = engine.authorize(mandate.id, None, deduct=False)
+                assert auth_ok is True
+
+            # 2. Revoke budget via dashboard revoke
+            payload_revoke = {
+                "id": "dashboard_allocated_task"
+            }
+            res_revoke = client.post(f"http://127.0.0.1:{port}/api/mandates/revoke", json=payload_revoke)
+            assert res_revoke.status_code == 200
+            assert res_revoke.json()["success"] is True
+
+            # Assert authorization now fails instantly in SDK engine
+            auth_revoked = engine.authorize("dashboard_allocated_task", None, deduct=False)
+            assert auth_revoked is False
+    finally:
+        server.shutdown()
+        server.server_close()
+

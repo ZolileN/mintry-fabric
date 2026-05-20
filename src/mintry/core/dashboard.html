@@ -450,6 +450,85 @@
             background: var(--border-bright);
             border-radius: 10px;
         }
+
+        /* Form and Admin controls */
+        .form-input {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            color: var(--text);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+        .form-input:focus {
+            border-color: var(--mint);
+            box-shadow: 0 0 8px var(--mint-dim);
+        }
+        .btn-submit {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+            background: var(--mint-dim);
+            color: var(--mint);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 6px;
+            padding: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 0.5rem;
+            width: 100%;
+            text-align: center;
+        }
+        .btn-submit:hover {
+            background: var(--mint);
+            color: var(--bg);
+            box-shadow: 0 0 15px var(--mint-glow);
+        }
+        .btn {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            text-transform: uppercase;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            outline: none;
+            margin-right: 4px;
+            display: inline-flex;
+            align-items: center;
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: var(--border-bright);
+            color: var(--text);
+        }
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: var(--color-expired);
+        }
+        .feedback-message {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            text-align: center;
+            margin-top: 0.5rem;
+            min-height: 18px;
+        }
+        .feedback-message.success {
+            color: var(--mint);
+        }
+        .feedback-message.error {
+            color: var(--color-expired);
+        }
     </style>
 </head>
 <body>
@@ -515,9 +594,9 @@
         </div>
 
         <!-- Section Label -->
-        <div class="section-label">// 03 — System ledger records</div>
+        <div class="section-label">// 03 — System ledger & administration</div>
 
-        <!-- Lower Grid: Mandates Ledger & Audit Trail -->
+        <!-- Lower Grid: Mandates Ledger & Budget Allocation Form -->
         <div class="bento-grid">
             <div class="bento-card col-8">
                 <div class="panel-header">
@@ -532,6 +611,7 @@
                                 <th>Budget</th>
                                 <th>Spent</th>
                                 <th>Expiry</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="mandates-table-body">
@@ -542,9 +622,37 @@
             </div>
             <div class="bento-card col-4">
                 <div class="panel-header">
+                    <h2>Allocate / Update Mandate</h2>
+                </div>
+                <form id="upsert-form" onsubmit="handleUpsert(event)" style="display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label class="kpi-label" for="form-mandate-id">Mandate ID</label>
+                        <input type="text" id="form-mandate-id" required placeholder="e.g. nightly_summarizer" class="form-input">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label class="kpi-label" for="form-budget">Budget Limit (USD)</label>
+                        <input type="number" id="form-budget" required step="0.0001" min="0.0001" placeholder="e.g. 50.00" class="form-input">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label class="kpi-label" for="form-expiry">Expiry Date (Optional)</label>
+                        <input type="datetime-local" id="form-expiry" class="form-input">
+                    </div>
+                    <button type="submit" class="btn-submit">Apply Mandate</button>
+                    <div id="feedback-area" class="feedback-message"></div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Section Label -->
+        <div class="section-label">// 04 — Security audit logs</div>
+
+        <!-- Live Audit Trail Grid -->
+        <div class="bento-grid">
+            <div class="bento-card col-12">
+                <div class="panel-header">
                     <h2>Live Audit Feed</h2>
                 </div>
-                <div class="event-list" id="audit-feed-list">
+                <div class="event-list" id="audit-feed-list" style="max-height: 350px;">
                     <!-- Dynamic log events loaded here -->
                 </div>
             </div>
@@ -605,7 +713,7 @@
             tableBodyEl.innerHTML = '';
             
             if (data.mandates.length === 0) {
-                tableBodyEl.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-tertiary); font-family:var(--font-mono); font-size:12px;">// Database ledger empty</td></tr>';
+                tableBodyEl.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); font-family:var(--font-mono); font-size:12px;">// Database ledger empty</td></tr>';
             } else {
                 data.mandates.forEach(m => {
                     const tr = document.createElement('tr');
@@ -619,6 +727,10 @@
                         <td>$${m.budget_usd.toFixed(4)}</td>
                         <td>$${m.spent_usd.toFixed(4)}</td>
                         <td style="color:var(--text-secondary); font-family:var(--font-mono); font-size:11px;">${m.expires_at}</td>
+                        <td>
+                            <button class="btn btn-danger" onclick="revokeMandate('${m.id}')">Revoke</button>
+                            <button class="btn" onclick="fillForm('${m.id}', ${m.budget_usd})">Top-up</button>
+                        </td>
                     `;
                     tableBodyEl.appendChild(tr);
                 });
@@ -719,6 +831,73 @@
                         }
                     }
                 });
+            }
+        }
+
+        function fillForm(id, budget) {
+            document.getElementById('form-mandate-id').value = id;
+            document.getElementById('form-budget').value = budget;
+            showFeedback("", "");
+        }
+
+        function showFeedback(text, type) {
+            const area = document.getElementById('feedback-area');
+            area.innerText = text;
+            area.className = 'feedback-message ' + type;
+            if (text) {
+                setTimeout(() => {
+                    area.innerText = "";
+                }, 4000);
+            }
+        }
+
+        async function handleUpsert(event) {
+            event.preventDefault();
+            const id = document.getElementById('form-mandate-id').value.trim();
+            const budget = parseFloat(document.getElementById('form-budget').value);
+            const expiryInput = document.getElementById('form-expiry').value;
+            
+            let expires_at = null;
+            if (expiryInput) {
+                expires_at = new Date(expiryInput).toISOString();
+            }
+
+            try {
+                const res = await fetch('/api/mandates/upsert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, budget_usd: budget, expires_at })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showFeedback("Mandate allocated successfully", "success");
+                    document.getElementById('upsert-form').reset();
+                    fetchSummary();
+                } else {
+                    showFeedback(data.error || "Allocation failed", "error");
+                }
+            } catch (err) {
+                showFeedback("Connection error", "error");
+            }
+        }
+
+        async function revokeMandate(id) {
+            if (!confirm(`Are you sure you want to revoke budget for mandate: ${id}?`)) return;
+            try {
+                const res = await fetch('/api/mandates/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showFeedback(`Mandate ${id} revoked`, "success");
+                    fetchSummary();
+                } else {
+                    showFeedback(data.error || "Revocation failed", "error");
+                }
+            } catch (err) {
+                showFeedback("Connection error", "error");
             }
         }
 
