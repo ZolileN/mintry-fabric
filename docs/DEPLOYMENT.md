@@ -76,3 +76,84 @@ For Kubernetes, the recommended pattern is the **Sidecar Proxy**. Rather than ru
 - **Webhooks**: Always set `MINTRY_WEBHOOK_URL` in production to alert your observability stack when mandates are exhausted or intents are blocked.
 - **Dashboard Access**: The Mintry dashboard currently does not feature built-in authentication. In production, place it behind an API Gateway or reverse proxy (like Nginx or Caddy) with Basic Auth or OIDC enabled.
 - **JSON Logs**: Set `MINTRY_JSON_LOGS=1` so your log aggregators (Datadog, Splunk, Grafana Loki) can parse the `event: spend_metered` telemetry out of the box.
+
+## 5. Live Production Smoke Test
+
+After deploying the control plane to Render and the dashboard to Vercel, you can verify the full data path from your terminal by writing a temporary test mandate into the live sync API and checking that it appears on the production dashboard.
+
+### Current Production Endpoints
+
+- **Dashboard**: `https://mintry-fabric-dashboard.vercel.app`
+- **Sync API**: `https://mintry-sync-api.onrender.com`
+
+### 1. Create a Test Mandate
+
+```bash
+curl -X POST https://mintry-sync-api.onrender.com/api/mandates/upsert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "test-prod-budget",
+    "budget_usd": 25,
+    "expires_at": null
+  }'
+```
+
+Expected response:
+
+```json
+{"success":true}
+```
+
+### 2. Send Budget Usage
+
+```bash
+curl -X POST https://mintry-sync-api.onrender.com/api/v1/sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mandate_id": "test-prod-budget",
+    "spend": 3.75,
+    "tokens": 1200
+  }'
+```
+
+Expected response shape:
+
+```json
+{"status":"synced","mandate_id":"test-prod-budget","mandate":{...}}
+```
+
+### 3. Verify the Backend Summary
+
+```bash
+curl https://mintry-sync-api.onrender.com/api/summary
+```
+
+You should see `test-prod-budget` in the `mandates` list, and the `stats.total_spent` value should reflect the recorded spend.
+
+### 4. Verify the Dashboard
+
+Open the production dashboard:
+
+`https://mintry-fabric-dashboard.vercel.app`
+
+The dashboard polls the backend every few seconds, so the new mandate and spend should appear shortly without a redeploy.
+
+### 5. Clean Up the Test Data
+
+```bash
+curl -X POST https://mintry-sync-api.onrender.com/api/mandates/revoke \
+  -H "Content-Type: application/json" \
+  -d '{"id":"test-prod-budget"}'
+```
+
+Expected response:
+
+```json
+{"success":true}
+```
+
+### Notes
+
+- Use obviously fake IDs such as `test-prod-budget` so test data is easy to identify and remove.
+- This smoke test writes to the live production control plane, so it should be treated as production data even though it is temporary.
+- The existing local test suite in [`tests/test_allocated_budget_usage.py`](/home/zolile/Documents/mintry-fabric/tests/test_allocated_budget_usage.py:74) validates local ledger behavior only; it does not push data into the deployed dashboard.
