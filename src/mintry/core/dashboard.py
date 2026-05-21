@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import sqlite3
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler
@@ -13,6 +13,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     db_path: ClassVar[str | None] = None
+    dashboard_ui_origin: ClassVar[str] = "http://127.0.0.1:3000"
 
     def log_message(self, format, *args):
         # Override to suppress standard HTTP logging to keep console clean
@@ -20,7 +21,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            self.serve_html()
+            self.serve_root()
         elif self.path == "/api/summary":
             self.serve_api()
         else:
@@ -110,19 +111,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Not Found")
 
-    def serve_html(self):
-        html_path = Path(__file__).parent / "dashboard.html"
-        if not html_path.exists():
-            self.send_error(500, "Dashboard template not found.")
-            return
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+    def serve_root(self):
+        self.send_response(307)
+        self.send_header("Location", self.dashboard_ui_origin)
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.end_headers()
-        
-        with open(html_path, "r", encoding="utf-8") as f:
-            self.wfile.write(f.read().encode("utf-8"))
 
     def serve_api(self):
         if not self.db_path:
@@ -215,6 +208,10 @@ def start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):
     """Starts the local web server hosting the dashboard."""
     # Class-level assignment so the request handler knows which DB to query
     DashboardHandler.db_path = db_path
+    DashboardHandler.dashboard_ui_origin = os.getenv(
+        "MINTRY_DASHBOARD_UI_ORIGIN",
+        DashboardHandler.dashboard_ui_origin,
+    )
     
     server = ThreadedHTTPServer((host, port), DashboardHandler)
     print(f"✨ Mintry Observability Dashboard running at http://{host}:{port}")

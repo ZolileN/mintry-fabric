@@ -23,7 +23,9 @@ If you prefer not to activate the virtualenv, use `uv run ...` for all commands 
 uv run python -c "import mintry; print('mintry import ok')"
 ```
 
-## Start the Dashboard
+## Start the Dashboard API
+
+The Next.js dashboard uses the Python runtime as its local ledger API.
 
 ```bash
 uv run mintry dashboard --db test_data/local.db --host 127.0.0.1 --port 8000
@@ -35,7 +37,18 @@ Expected output:
 ✨ Mintry Observability Dashboard running at http://127.0.0.1:8000
 ```
 
-The dashboard will create the SQLite DB if it does not already exist.
+## Start the Next.js Dashboard UI
+
+In a second terminal:
+
+```bash
+cd apps/dashboard
+npm run dev
+```
+
+Then open `http://127.0.0.1:3000`.
+
+The dashboard will create the SQLite DB if it does not already exist through the Python API layer.
 
 ## Use the CLI
 
@@ -87,9 +100,10 @@ uv run pytest tests/test_observability.py
 
 ## Notes
 
-- the dashboard uses Python’s built-in HTTP server
+- the dashboard UI is the Next.js app in `apps/dashboard`
+- the dashboard data API still uses Python’s built-in HTTP server
 - the current implementation is designed around a local SQLite ledger, not a networked shared service
-- there is no Docker packaging in the repo yet
+- the root Docker image serves the Next.js dashboard on port `3000`
 
 ## Common Fixes
 

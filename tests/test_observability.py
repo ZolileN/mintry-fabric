@@ -123,10 +123,10 @@ def test_dashboard_server_http(temp_db):
 
     try:
         with httpx.Client() as client:
-            # 1. Get HTML Page
-            res_html = client.get(f"http://127.0.0.1:{port}/")
-            assert res_html.status_code == 200
-            assert "MINTRY.FABRIC" in res_html.text
+            # 1. Root redirects to the Next.js dashboard
+            res_root = client.get(f"http://127.0.0.1:{port}/", follow_redirects=False)
+            assert res_root.status_code == 307
+            assert res_root.headers["location"] == "http://127.0.0.1:3000"
 
             # 2. Get API Summary JSON
             res_api = client.get(f"http://127.0.0.1:{port}/api/summary")

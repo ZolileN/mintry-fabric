@@ -20,12 +20,13 @@ The simplest deployment model is running Mintry Fabric directly on your local wo
 
 - **Storage**: `~/.mintry/vouchers.db`
 - **Application**: Runs natively via Python SDK (`mintry.init()`) or Node.js SDK.
-- **Dashboard**: Run via the CLI `mintry-dashboard` command.
+- **Dashboard UI**: Run the Next.js app from `apps/dashboard`.
+- **Dashboard API**: Run via the CLI `mintry dashboard` command.
 - **Concurrency**: WAL mode allows the dashboard, CLI, and SDKs to read/write concurrently without locking.
 
 ## 2. Docker / Single-Host Deployments
 
-When packaging your application inside Docker, you must mount a shared volume so the SDK and the observability dashboard can communicate via the same SQLite ledger.
+When packaging your application inside Docker, you must mount a shared volume so the SDK and the shipped Next.js dashboard runtime can communicate via the same SQLite ledger.
 
 ### `docker-compose.yml` Example
 
@@ -41,12 +42,13 @@ services:
       - MINTRY_API_KEY=${MINTRY_API_KEY}
     
   dashboard:
-    image: python:3.12-slim
-    command: ["pip", "install", "mintry-fabric", "&&", "mintry-dashboard"]
+    build: .
     ports:
-      - "8820:8820"
+      - "3000:3000"
     volumes:
       - mintry-data:/root/.mintry
+    environment:
+      - MINTRY_DB_PATH=/root/.mintry/vouchers.db
 
 volumes:
   mintry-data:

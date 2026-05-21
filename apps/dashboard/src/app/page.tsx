@@ -48,8 +48,7 @@ export default function Dashboard() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      // By default, fetch from local Python API for the dashboard
-      const response = await fetch('http://localhost:8000/api/summary');
+      const response = await fetch('/api/summary');
       if (response.ok) {
         const json = await response.json();
         setData(json);
@@ -60,7 +59,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/summary')
+    fetch('/api/summary')
       .then(res => res.ok ? res.json() : Promise.reject('Not OK'))
       .then(json => setData(json))
       .catch(err => console.error("Dashboard API sync failed:", err));
@@ -79,7 +78,7 @@ export default function Dashboard() {
     }
 
     try {
-        const res = await fetch('http://localhost:8000/api/mandates/upsert', {
+        const res = await fetch('/api/mandates/upsert', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: formState.id, budget_usd: parseFloat(formState.budget), expires_at })
@@ -100,7 +99,7 @@ export default function Dashboard() {
   const revokeMandate = async (id: string) => {
     if (!confirm(`Are you sure you want to revoke budget for mandate: ${id}?`)) return;
     try {
-        const res = await fetch('http://localhost:8000/api/mandates/revoke', {
+        const res = await fetch('/api/mandates/revoke', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id })

@@ -1,22 +1,22 @@
 # Example docker-compose.yml for Mintry Fabric Shared Ledger Deployment
-# 
-# This file demonstrates the recommended single-host deployment pattern where 
-# an application container and the Mintry dashboard container share the same 
-# SQLite ledger (vouchers.db) through a Docker volume.
+#
+# This file demonstrates the recommended single-host deployment pattern where
+# an application container and the shipped Next.js dashboard runtime share the
+# same SQLite ledger (vouchers.db) through a Docker volume.
 
 version: '3.8'
 
 services:
-  # The central observability dashboard
+  # The shipped Next.js dashboard runtime, backed by the local Python ledger API
   dashboard:
     build: .
     container_name: mintry-dashboard
     ports:
-      - "8000:8000"
+      - "3000:3000"
     volumes:
-      # Both containers must mount this volume to the same path
-      # or explicitly configure the DB path via environment variables
       - mintry-data:/root/.mintry
+    environment:
+      - MINTRY_DB_PATH=/root/.mintry/vouchers.db
     restart: unless-stopped
 
   # Example application container
