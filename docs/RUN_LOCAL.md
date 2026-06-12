@@ -131,3 +131,112 @@ Use a writable path:
 mkdir -p test_data
 uv run mintry dashboard --db test_data/local.db
 ```
+
+---
+
+## Performance Baseline Testing (Acquisition Roadmap)
+
+Use these steps to isolate and measure Mintry's internal proxy overhead using the local Gemini mock server and OpenTelemetry instrumentation.
+
+### Step 1 — Start the Gemini Mock Server
+
+The mock server accepts standard Gemini API payloads and returns a deterministic response after exactly **10 ms**. Any latency above 10 ms during your tests is pure Mintry proxy overhead.
+
+```bash
+# From repo root
+go run tools/gemini-mock-server/main.go
+# Listens on http://localhost:9090
+```
+
+Smoke-test it:
+
+```bash
+curl -s -w "\nTotal time: %{time_total}s\n" \
+  -X POST http://localhost:9090/v1beta/models/gemini-2.0-flash:generateContent \
+  -H "Content-Type: application/json" \
+  -d '{"contents": [{"role": "user", "parts": [{"text": "hello"}]}]}'
+```
+
+Expected: JSON response in ~10 ms. Check `/health` for server status:
+
+```bash
+curl http://localhost:9090/health
+```
+
+### Step 2 — Start Mintry with OpenTelemetry Enabled
+
+In a second terminal:
+
+```bash
+MINTRY_OTEL_ENABLED=1 uv run mintry dashboard --db test_data/local.db --host 127.0.0.1 --port 8000
+```
+
+Expected output includes:
+
+```text
+✨ Mintry Logic Fabric Active | No-GIL: True
+📊 Mintry metrics: http://localhost:9091/metrics
+```
+
+### Step 3 — Verify the Prometheus Metrics Endpoint
+
+```bash
+curl http://localhost:9091/metrics | grep mintry
+```
+
+Key metrics to watch:
+
+| Metric | Description |
+|--------|-------------|
+| `mintry_proxy_duration_ms_bucket` | Internal proxy latency histogram |
+| `mintry_proxy_duration_ms_count` | Total proxied requests |
+| `mintry_proxy_cost_usd_bucket` | Per-request LLM spend histogram |
+
+### Step 4 — (Optional) Enable Console Span Output
+
+```bash
+MINTRY_OTEL_ENABLED=1 MINTRY_OTEL_CONSOLE_SPANS=1 uv run mintry dashboard --db test_data/local.db
+```
+
+This prints each span to stdout for manual inspection.
+
+### Step 5 — Apply Kernel Tuning Before Load Testing
+
+Before running `k6` at 10,000 RPS, apply OS-level socket optimisations:
+
+```bash
+# Preview what will run (no changes applied)
+bash scripts/tune-kernel.sh --dry-run
+
+# Apply (requires root)
+sudo bash scripts/tune-kernel.sh
+```
+
+Settings applied:
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `ulimit -n` | 65535 | One file descriptor per concurrent socket |
+| `net.ipv4.ip_local_port_range` | 1024–65535 | Prevents port exhaustion at high churn |
+| `net.ipv4.tcp_tw_reuse` | 1 | Recycles TIME_WAIT sockets immediately |
+
+To make sysctl changes persist across reboots:
+
+```bash
+echo 'net.ipv4.ip_local_port_range=1024 65535' | sudo tee -a /etc/sysctl.d/99-mintry-perf.conf
+echo 'net.ipv4.tcp_tw_reuse=1'                 | sudo tee -a /etc/sysctl.d/99-mintry-perf.conf
+sudo sysctl --system
+```
+
+### Live Mock Server Tests
+
+Once the Go mock server is running, the live integration tests in the telemetry suite activate automatically:
+
+```bash
+uv run pytest tests/test_telemetry.py -v
+# TestMockServerIntegration tests will run (not skipped)
+```
+
+These assert:
+- Mock server responds in ≥ 10 ms
+- Mintry's proxy overhead above the 10 ms baseline is < 5 ms

@@ -6,6 +6,7 @@ from mintry.interceptors.global_http import GlobalHTTPInterceptor
 from mintry.core.engine import PolicyEngine
 from mintry.core.wallet import MintryWallet
 from mintry.core.exceptions import MintryMandateExceeded
+from mintry import telemetry as _telemetry
 
 __version__ = "1.0.0"
 
@@ -48,6 +49,9 @@ def init(
 
     # Install the global hooks
     interceptor.install()
+
+    # Optionally start the Prometheus metrics server (MINTRY_OTEL_ENABLED=1)
+    _telemetry.start_metrics_server()
 
     if os.environ.get("MINTRY_JSON_LOGS") != "1":
         print(f"\u2728 Mintry Logic Fabric Active | No-GIL: True")
