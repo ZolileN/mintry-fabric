@@ -2,10 +2,12 @@ import httpx
 import sys
 import json
 import os
+import time
 from datetime import datetime, timezone
 
 from mintry.core.pricing import calculate_cost
 from mintry.core.exceptions import MintryMandateExceeded
+from mintry import telemetry as _telemetry
 
 # List of known LLM API host patterns
 _LLM_HOSTS = [
@@ -32,7 +34,15 @@ def _is_llm_request(url: str) -> bool:
 
 
 def _extract_model(request: httpx.Request) -> str:
-    """Extract the model name from the request body."""
+    """Extract the model name from the request URL or body."""
+    # Fast path: extract from Gemini/OpenAI URL if possible
+    url = str(request.url)
+    if "/models/" in url:
+        # e.g., /v1beta/models/gemini-2.0-flash:generateContent
+        parts = url.split("/models/")[-1].split(":")
+        if parts:
+            return parts[0]
+
     try:
         body = json.loads(request.content)
         return body.get("model", "unknown")
@@ -51,8 +61,18 @@ class GlobalHTTPInterceptor:
 
     def _check_intent(self, request: httpx.Request):
         """Shared intent-filtering logic used by both sync_intercept and install."""
+        content_bytes = request.content
+        if not content_bytes:
+            return
+
+        # Fast path: skip JSON decoding if no prohibited phrases are present in raw bytes
+        prohibited_phrases = [b"bypass wallet", b"disable mintry", b"delete vouchers.db"]
+        content_lower = content_bytes.lower()
+        if not any(p in content_lower for p in prohibited_phrases):
+            return
+
         try:
-            body = json.loads(request.content)
+            body = json.loads(content_bytes)
             prompt = " ".join([m['content'] for m in body.get('messages', [])]).lower()
 
             prohibited = ["bypass wallet", "disable mintry", "delete vouchers.db"]
@@ -129,56 +149,132 @@ class GlobalHTTPInterceptor:
         # ── Sync patch ──────────────────────────────────────────────
         def patched_send(client_self, request, **kwargs):
             url_str = str(request.url)
-            if _is_llm_request(url_str):
-                mandate_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
+            is_llm = _is_llm_request(url_str)
 
-                # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
-                if not engine.authorize(mandate_id, request, deduct=False):
-                    interceptor._raise_budget_error(engine, mandate_id)
+            # ── OTel: open span the instant the hook fires (pre-flight) ──
+            tracer = _telemetry.get_tracer()
+            span_cm = tracer.start_as_current_span("mintry.proxy.request")
+            span = span_cm.__enter__()
+            _t0 = time.perf_counter()
 
-                # 2. PRE-FLIGHT — Intent Check
-                interceptor._check_intent(request)
+            try:
+                if span.is_recording():
+                    span.set_attribute("http.url", url_str)
 
-            # 3. FLIGHT
-            response = original_send(client_self, request, **kwargs)
+                if is_llm:
+                    mandate_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
 
-            # 4. POST-FLIGHT — Actual Metering
-            if response.status_code == 200 and _is_llm_request(url_str):
-                content = response.read()
-                try:
-                    data = json.loads(content)
-                    interceptor._meter_response(engine, request, data)
-                finally:
-                    response._content = content
+                    if span.is_recording():
+                        span.set_attribute("mintry.mandate_id", mandate_id)
 
-            return response
+                    # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
+                    if not engine.authorize(mandate_id, request, deduct=False):
+                        interceptor._raise_budget_error(engine, mandate_id)
+
+                    # 2. PRE-FLIGHT — Intent Check
+                    interceptor._check_intent(request)
+
+                # 3. FLIGHT
+                response = original_send(client_self, request, **kwargs)
+
+                if span.is_recording():
+                    span.set_attribute("http.status_code", response.status_code)
+
+                # 4. POST-FLIGHT — Actual Metering
+                if response.status_code == 200 and is_llm:
+                    content = response.read()
+                    try:
+                        data = json.loads(content)
+                        interceptor._meter_response(engine, request, data)
+                        model = data.get("model", _extract_model(request))
+                        usage = data.get("usage", {})
+                        from mintry.core.pricing import calculate_cost as _cc
+                        cost = _cc(
+                            model,
+                            usage.get("prompt_tokens", 0),
+                            usage.get("completion_tokens", 0),
+                        )
+                        if span.is_recording():
+                            span.set_attribute("mintry.model", model)
+                            span.set_attribute("mintry.cost_usd", cost)
+                        _telemetry.record_proxy_cost(cost)
+                    finally:
+                        response._content = content
+
+                return response
+
+            finally:
+                # ── OTel: end span post-flight (response bytes flushed) ──
+                _duration_ms = (time.perf_counter() - _t0) * 1000
+                if span.is_recording():
+                    span.set_attribute("mintry.proxy_duration_ms", round(_duration_ms, 3))
+                _telemetry.record_proxy_duration(_duration_ms)
+                span_cm.__exit__(None, None, None)
 
         # ── Async patch ─────────────────────────────────────────────
         async def patched_async_send(client_self, request, **kwargs):
             url_str = str(request.url)
-            if _is_llm_request(url_str):
-                mandate_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
+            is_llm = _is_llm_request(url_str)
 
-                # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
-                if not engine.authorize(mandate_id, request, deduct=False):
-                    interceptor._raise_budget_error(engine, mandate_id)
+            # ── OTel: open span the instant the hook fires (pre-flight) ──
+            tracer = _telemetry.get_tracer()
+            span_cm = tracer.start_as_current_span("mintry.proxy.request")
+            span = span_cm.__enter__()
+            _t0 = time.perf_counter()
 
-                # 2. PRE-FLIGHT — Intent Check
-                interceptor._check_intent(request)
+            try:
+                if span.is_recording():
+                    span.set_attribute("http.url", url_str)
 
-            # 3. FLIGHT
-            response = await original_async_send(client_self, request, **kwargs)
+                if is_llm:
+                    mandate_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
 
-            # 4. POST-FLIGHT — Actual Metering
-            if response.status_code == 200 and _is_llm_request(url_str):
-                content = await response.aread()
-                try:
-                    data = json.loads(content)
-                    interceptor._meter_response(engine, request, data)
-                finally:
-                    response._content = content
+                    if span.is_recording():
+                        span.set_attribute("mintry.mandate_id", mandate_id)
 
-            return response
+                    # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
+                    if not engine.authorize(mandate_id, request, deduct=False):
+                        interceptor._raise_budget_error(engine, mandate_id)
+
+                    # 2. PRE-FLIGHT — Intent Check
+                    interceptor._check_intent(request)
+
+                # 3. FLIGHT
+                response = await original_async_send(client_self, request, **kwargs)
+
+                if span.is_recording():
+                    span.set_attribute("http.status_code", response.status_code)
+
+                # 4. POST-FLIGHT — Actual Metering
+                if response.status_code == 200 and is_llm:
+                    content = await response.aread()
+                    try:
+                        data = json.loads(content)
+                        interceptor._meter_response(engine, request, data)
+                        model = data.get("model", _extract_model(request))
+                        usage = data.get("usage", {})
+                        from mintry.core.pricing import calculate_cost as _cc
+                        cost = _cc(
+                            model,
+                            usage.get("prompt_tokens", 0),
+                            usage.get("completion_tokens", 0),
+                        )
+                        if span.is_recording():
+                            span.set_attribute("mintry.model", model)
+                            span.set_attribute("mintry.cost_usd", cost)
+                        _telemetry.record_proxy_cost(cost)
+                    finally:
+                        response._content = content
+
+                return response
+
+            finally:
+                # ── OTel: end span post-flight (response bytes flushed) ──
+                _duration_ms = (time.perf_counter() - _t0) * 1000
+                if span.is_recording():
+                    span.set_attribute("mintry.proxy_duration_ms", round(_duration_ms, 3))
+                _telemetry.record_proxy_duration(_duration_ms)
+                span_cm.__exit__(None, None, None)
 
         # Apply monkey patches
         httpx.Client.send = patched_send
