@@ -69,7 +69,7 @@ engine = mintry.init(
     db_path="test_data/local.db",
 )
 
-engine.wallet.create_mandate("smoke_task", 1.00)
+engine.wallet.create_mandate("smoke_task", 100.00)
 print(engine.wallet.get_mandate("smoke_task"))
 ```
 
@@ -78,6 +78,40 @@ Run it:
 ```bash
 uv run python smoke_test.py
 ```
+
+### Check Spent Budget
+
+After running requests through the engine, inspect the `spent_usd` field to confirm budget has been consumed:
+
+```python
+import mintry
+
+engine = mintry.init(
+    api_key="dev_key",
+    db_path="test_data/local.db",
+)
+
+engine.wallet.create_mandate("smoke_task", 100.00)
+print(engine.wallet.get_mandate("smoke_task"))
+# {'budget_usd': 100.0, 'spent_usd': 0.0, 'status': 'active', 'expires_at': None}
+
+# ... make metered API calls through the engine ...
+
+# Re-fetch to see updated spend
+mandate = engine.wallet.get_mandate("smoke_task")
+print(f"Spent: ${mandate['spent_usd']:.4f} / ${mandate['budget_usd']:.2f}")
+```
+
+Expected output after metered usage:
+
+```text
+✨ Mintry Logic Fabric Hooked into HTTPX (sync + async)
+✨ Mintry Logic Fabric Active | No-GIL: True
+{'budget_usd': 100.0, 'spent_usd': 0.0, 'status': 'active', 'expires_at': None}
+Spent: $0.0200 / $100.00
+```
+
+> **Note:** `spent_usd` updates automatically whenever the engine proxies a metered request. The value persists across process restarts via the local SQLite ledger at `test_data/local.db`.
 
 ## Run Tests
 

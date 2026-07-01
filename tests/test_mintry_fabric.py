@@ -13,6 +13,7 @@ def isolate_fabric(tmp_path):
     GlobalHTTPInterceptor._reset()
 
 
+@pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 def test_logic_fabric_enforcement(tmp_path, httpx_mock):
     """shield() creates a real mandate that is enforced when budget is exhausted."""
     db = str(tmp_path / "vouchers.db")

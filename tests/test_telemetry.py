@@ -185,6 +185,9 @@ class TestSpanInstrumentation:
                     headers={"x-mintry-mandate": "test_mandate"},
                 )
 
+            from mintry.interceptors.global_http import _flush_metering_queue
+            _flush_metering_queue()
+
         assert len(recorded_costs) >= 1, "Expected at least one cost recording"
 
     def test_non_llm_request_still_records_duration(self, tmp_path, httpx_mock):

@@ -3,11 +3,78 @@ import sys
 import json
 import os
 import time
+import queue
+import threading
 from datetime import datetime, timezone
 
 from mintry.core.pricing import calculate_cost
 from mintry.core.exceptions import MintryMandateExceeded
 from mintry import telemetry as _telemetry
+
+_METERING_QUEUE = queue.Queue()
+_METERING_THREAD = None
+_METERING_THREAD_STARTED = False
+_METERING_THREAD_LOCK = threading.Lock()
+
+
+def _run_metering_worker():
+    while True:
+        engine, request_info, response_bytes = _METERING_QUEUE.get()
+        try:
+            _process_metering_task(engine, request_info, response_bytes)
+        except Exception:
+            pass
+        finally:
+            _METERING_QUEUE.task_done()
+
+
+def _ensure_metering_worker():
+    global _METERING_THREAD_STARTED, _METERING_THREAD
+    if _METERING_THREAD_STARTED:
+        return
+    with _METERING_THREAD_LOCK:
+        if _METERING_THREAD_STARTED:
+            return
+        _METERING_THREAD = threading.Thread(target=_run_metering_worker, daemon=True)
+        _METERING_THREAD.start()
+        _METERING_THREAD_STARTED = True
+
+
+def _enqueue_metering(engine, request_info, response_bytes):
+    _ensure_metering_worker()
+    _METERING_QUEUE.put((engine, request_info, response_bytes))
+
+
+def _flush_metering_queue(timeout: float = 3.0) -> None:
+    """Block until all pending metering tasks have been processed."""
+    _METERING_QUEUE.join()
+
+
+def _extract_model_from_info(request_info):
+    url = request_info.get("url", "")
+    if "/models/" in url:
+        parts = url.split("/models/")[-1].split(":")
+        if parts:
+            return parts[0]
+
+    try:
+        body = json.loads(request_info.get("content") or b"")
+        return body.get("model", "unknown")
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        return "unknown"
+
+
+def _process_metering_task(engine, request_info, response_bytes):
+    try:
+        data = json.loads(response_bytes)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return
+
+    model = data.get("model") or _extract_model_from_info(request_info)
+    prompt_tokens, completion_tokens = _extract_tokens(data)
+    actual_cost = calculate_cost(model, prompt_tokens, completion_tokens)
+    engine.wallet.record_usage(request_info["mandate_id"], actual_cost)
+    _telemetry.record_proxy_cost(actual_cost)
 
 # List of known LLM API host patterns
 _LLM_HOSTS = [
@@ -48,6 +115,19 @@ def _extract_model(request: httpx.Request) -> str:
         return body.get("model", "unknown")
     except (json.JSONDecodeError, UnicodeDecodeError):
         return "unknown"
+
+
+def _extract_tokens(data: dict) -> tuple[int, int]:
+    """Extract input and output tokens supporting standard (OpenAI/Anthropic/Mistral) and Gemini formats."""
+    usage = data.get("usage")
+    if isinstance(usage, dict):
+        return usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+    
+    usage_metadata = data.get("usageMetadata")
+    if isinstance(usage_metadata, dict):
+        return usage_metadata.get("promptTokenCount", 0), usage_metadata.get("candidatesTokenCount", 0)
+        
+    return 0, 0
 
 
 class GlobalHTTPInterceptor:
@@ -102,26 +182,6 @@ class GlobalHTTPInterceptor:
             task=summary["mandate_id"],
             cap=summary["budget_usd"],
             spent=summary["spent_usd"],
-        )
-
-    def _meter_response(self, engine, request: httpx.Request, data: dict):
-        """Post-flight metering: calculate cost from usage metadata and record it."""
-        mandate_id = self._get_mandate_id(request)
-        usage = data.get("usage", {})
-        model = data.get("model", _extract_model(request))
-
-        prompt_tokens = usage.get("prompt_tokens", 0)
-        completion_tokens = usage.get("completion_tokens", 0)
-
-        actual_cost = calculate_cost(model, prompt_tokens, completion_tokens)
-        engine.wallet.record_usage(mandate_id, actual_cost)
-        _print_log(
-            "spend_metered", 
-            mandate_id=mandate_id, 
-            cost=actual_cost, 
-            model=model, 
-            prompt_tokens=prompt_tokens, 
-            completion_tokens=completion_tokens
         )
 
     def sync_intercept(self, request: httpx.Request):
@@ -180,26 +240,16 @@ class GlobalHTTPInterceptor:
                 if span.is_recording():
                     span.set_attribute("http.status_code", response.status_code)
 
-                # 4. POST-FLIGHT — Actual Metering
+                # 4. POST-FLIGHT — Defer metering off the critical response path.
                 if response.status_code == 200 and is_llm:
-                    content = response.read()
-                    try:
-                        data = json.loads(content)
-                        interceptor._meter_response(engine, request, data)
-                        model = data.get("model", _extract_model(request))
-                        usage = data.get("usage", {})
-                        from mintry.core.pricing import calculate_cost as _cc
-                        cost = _cc(
-                            model,
-                            usage.get("prompt_tokens", 0),
-                            usage.get("completion_tokens", 0),
-                        )
-                        if span.is_recording():
-                            span.set_attribute("mintry.model", model)
-                            span.set_attribute("mintry.cost_usd", cost)
-                        _telemetry.record_proxy_cost(cost)
-                    finally:
-                        response._content = content
+                    content = response.content
+                    request_info = {
+                        "url": url_str,
+                        "content": request.content,
+                        "mandate_id": mandate_id,
+                    }
+                    _enqueue_metering(engine, request_info, content)
+                    response._content = content
 
                 return response
 
@@ -245,26 +295,16 @@ class GlobalHTTPInterceptor:
                 if span.is_recording():
                     span.set_attribute("http.status_code", response.status_code)
 
-                # 4. POST-FLIGHT — Actual Metering
+                # 4. POST-FLIGHT — Defer metering off the critical response path.
                 if response.status_code == 200 and is_llm:
                     content = await response.aread()
-                    try:
-                        data = json.loads(content)
-                        interceptor._meter_response(engine, request, data)
-                        model = data.get("model", _extract_model(request))
-                        usage = data.get("usage", {})
-                        from mintry.core.pricing import calculate_cost as _cc
-                        cost = _cc(
-                            model,
-                            usage.get("prompt_tokens", 0),
-                            usage.get("completion_tokens", 0),
-                        )
-                        if span.is_recording():
-                            span.set_attribute("mintry.model", model)
-                            span.set_attribute("mintry.cost_usd", cost)
-                        _telemetry.record_proxy_cost(cost)
-                    finally:
-                        response._content = content
+                    request_info = {
+                        "url": url_str,
+                        "content": request.content,
+                        "mandate_id": mandate_id,
+                    }
+                    _enqueue_metering(engine, request_info, content)
+                    response._content = content
 
                 return response
 

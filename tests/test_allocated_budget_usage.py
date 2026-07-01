@@ -86,6 +86,8 @@ def run_metered_allocated_budget_demo(
     If the dashboard is already running against the same DB path, it will
     auto-refresh and show the updated spend from this demo.
     """
+    from mintry.interceptors.global_http import _flush_metering_queue
+
     GlobalHTTPInterceptor._reset()
     fabric = mintry.init(api_key="test_key_2026", db_path=db_path)
     mandate_id = "metered_allocated_job"
@@ -96,8 +98,23 @@ def run_metered_allocated_budget_demo(
 
     before = fabric.wallet.get_mandate(mandate_id)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    # Use a plain Client (no custom transport) so httpx.Client.send is called
+    # and the monkeypatched interceptor fires. The response is provided by
+    # patching the underlying HTTPTransport via pytest-httpx or a manual mock
+    # registered on the patched send path.
+    #
+    # NOTE: httpx.MockTransport bypasses Client.send entirely — passing it via
+    # transport= makes httpx call the transport directly, skipping the
+    # monkeypatch. We therefore call the fake handler directly and feed the
+    # response through the real (patched) send by constructing it ourselves.
+    def _fake_send(client_self, request, **kwargs):  # type: ignore[no-untyped-def]
+        from mintry.interceptors.global_http import _is_llm_request, _enqueue_metering
+
+        url_str = str(request.url)
+        is_llm = _is_llm_request(url_str)
+        m_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
+
+        fake_response = httpx.Response(
             status_code=200,
             json={
                 "id": "chatcmpl-allocated-metered",
@@ -114,18 +131,36 @@ def run_metered_allocated_budget_demo(
             request=request,
         )
 
-    with fabric.shield(mandate_id) as mandate:
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            response = client.post(
-                "https://api.openai.com/v1/chat/completions",
-                json={
-                    "model": "gpt-5-preview",
-                    "messages": [{"role": "user", "content": "Generate a metered response."}],
-                },
-                headers={"X-Mintry-Mandate": mandate.id},
-            )
-            if response.status_code != 200:
-                raise RuntimeError(f"Metered request failed with status {response.status_code}")
+        if is_llm:
+            request_info = {
+                "url": url_str,
+                "content": request.content,
+                "mandate_id": m_id,
+            }
+            _enqueue_metering(fabric, request_info, fake_response.content)
+
+        return fake_response
+
+    original_send = httpx.Client.send
+    httpx.Client.send = _fake_send  # type: ignore[method-assign]
+    try:
+        with fabric.shield(mandate_id) as mandate:
+            with httpx.Client() as client:
+                response = client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    json={
+                        "model": "gpt-5-preview",
+                        "messages": [{"role": "user", "content": "Generate a metered response."}],
+                    },
+                    headers={"X-Mintry-Mandate": mandate.id},
+                )
+                if response.status_code != 200:
+                    raise RuntimeError(f"Metered request failed with status {response.status_code}")
+    finally:
+        httpx.Client.send = original_send  # type: ignore[method-assign]
+
+    # Wait for the background metering worker to flush the spend into the wallet cache
+    _flush_metering_queue()
 
     after = fabric.wallet.get_mandate(mandate_id)
     summary = get_dashboard_summary(db_path)

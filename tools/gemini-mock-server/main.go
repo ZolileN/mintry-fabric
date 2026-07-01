@@ -78,6 +78,16 @@ var staticResponse = GeminiResponse{
 	ModelVersion: "gemini-2.0-flash-mock",
 }
 
+var staticResponseSerialized []byte
+
+func init() {
+	var err error
+	staticResponseSerialized, err = json.Marshal(staticResponse)
+	if err != nil {
+		log.Fatalf("failed to serialize static response: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Synthetic delay constant — this is the control baseline.
 // Any latency recorded above this value during proxy tests is pure Mintry
@@ -114,12 +124,12 @@ func generateContentHandler(w http.ResponseWriter, r *http.Request) {
 	// Apply deterministic synthetic delay — our control baseline.
 	time.Sleep(syntheticDelay)
 
-	// Serialize the static response.
+	// Write the pre-serialized static response.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if err := json.NewEncoder(w).Encode(staticResponse); err != nil {
-		log.Printf("[ERROR] failed to encode response: %v", err)
+	if _, err := w.Write(staticResponseSerialized); err != nil {
+		log.Printf("[ERROR] failed to write response: %v", err)
 		return
 	}
 

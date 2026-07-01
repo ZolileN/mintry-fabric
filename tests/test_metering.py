@@ -1,6 +1,6 @@
 import pytest
 import mintry
-from mintry.interceptors.global_http import GlobalHTTPInterceptor
+from mintry.interceptors.global_http import GlobalHTTPInterceptor, _flush_metering_queue
 from openai import OpenAI
 from decimal import Decimal
 
@@ -50,6 +50,11 @@ def test_real_time_metering(httpx_mock, tmp_path):
         model="gpt-5-preview",
         messages=[{"role": "user", "content": "Generate 1000 tokens of text."}]
     )
+
+    # Flush the async metering queue so spend is committed to the wallet cache
+    # before we read it. The worker is a daemon thread — without this, get_spent()
+    # may run before record_usage() has fired.
+    _flush_metering_queue()
 
     # 3. Verify the Ledger
     final_spent = fabric.wallet.get_spent(mandate_id)

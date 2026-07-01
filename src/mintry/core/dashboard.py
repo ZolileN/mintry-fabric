@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 class ThreadPoolHTTPServer(HTTPServer):
     """Multi-threaded HTTP server using a fixed size thread pool to prevent thread/GIL thrashing."""
+    request_queue_size = 65536  # Increase TCP backlog to handle massive concurrent VUs
     def __init__(self, server_address, RequestHandlerClass, max_workers=256):
         super().__init__(server_address, RequestHandlerClass)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
