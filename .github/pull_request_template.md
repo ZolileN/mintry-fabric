@@ -35,6 +35,15 @@ Add screenshots or demo notes if relevant.
 ## Risks / Impact
 Any risky areas, migrations, breaking changes, or rollout concerns?
 
+## Architecture Principles
+Please confirm this feature aligns with our [Six Architecture Principles](docs/ARCHITECTURE.md):
+- [ ] **Initialize once**: No additional init steps added for new governance changes.
+- [ ] **Author centrally**: No in-place mutations of past spend ledgers.
+- [ ] **Enforce locally**: No synchronous network calls added to the LLM path.
+- [ ] **Sync asynchronously**: State syncs via polling, fail open/closed handles offline gracefully.
+- [ ] **Fail to last-known-good**: If unreachable, falls back correctly.
+- [ ] **Stay deterministic**: Feature is explicitly "allow/block/number" in the enforcement path.
+
 ## Checklist
 - [ ] Code builds successfully
 - [ ] Tests pass
