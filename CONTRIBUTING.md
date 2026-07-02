@@ -34,6 +34,7 @@ docs/
 - keep public APIs typed and documented
 - do not commit secrets or SQLite database files
 - do not assume docs are accurate until you compare them against `src/mintry`
+- **Ensure all proposed changes comply strictly with the [Six Architecture Principles](docs/ARCHITECTURE.md). Features that violate deterministic local enforcement will be rejected.**
 
 ## Useful Commands
 

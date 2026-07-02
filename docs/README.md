@@ -2,6 +2,9 @@
 
 This documentation set is aligned to the current code in `src/mintry`.
 
+> [!IMPORTANT]
+> **Read This First:** All development and feature design must strictly adhere to the [Six Architecture Principles](ARCHITECTURE.md). Features that violate these principles will be rejected.
+
 ## Getting Started
 
 | Document | Description |

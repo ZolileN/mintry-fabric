@@ -87,6 +87,10 @@ uv run pytest tests/test_sprint3.py
 - `GlobalHTTPInterceptor`: sync/async `httpx` monkey-patch and post-flight metering
 - `AP2IntentMandate`: signed mandate model with ES256 verification helpers
 
+## Architecture Guardrails
+
+All features and contributions must strictly adhere to the [Six Architecture Principles](docs/ARCHITECTURE.md). Features that violate deterministic, local-first enforcement will not be accepted.
+
 ## Current Release Status
 
 The codebase implements roadmap milestones through the `v0.5.0` feature set, and the package version reflects this. See [docs/ROADMAP.md](docs/ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md) for the current state and remaining work before `v1.0.0`.

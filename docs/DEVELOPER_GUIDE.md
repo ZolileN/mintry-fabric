@@ -118,10 +118,12 @@ Typical flow:
 
 ## Design Constraints
 
+- **Adherence to the [Six Architecture Principles](ARCHITECTURE.md) is mandatory for all development.**
 - the interceptor is a process-wide monkey-patch
 - the ledger is local SQLite, not a hosted control plane
 - multi-process and network-shared deployments are not yet a packaged product path
 - webhook support exists, but remote sync is still only represented by local hooks and integration points
+- **Zero latency**: the enforcement plane (local SQLite) must operate synchronously without adding network hops to the critical path.
 
 ## Recommended Development Loop
 

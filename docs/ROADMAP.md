@@ -2,6 +2,9 @@
 
 This roadmap reflects the code currently present in the repository and the remaining work before a true production-ready `v1.0.0`.
 
+> [!IMPORTANT]
+> **Architectural Alignment:** All items on this roadmap, including "Ideas Under Consideration", are strictly subject to validation against the [Six Architecture Principles](ARCHITECTURE.md). Any feature that compromises deterministic, zero-latency local enforcement will be removed from the roadmap.
+
 ## Repository Status
 
 The implementation currently covers the roadmap milestones through `v0.5.0`:

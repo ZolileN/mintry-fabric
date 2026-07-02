@@ -53,3 +53,8 @@ The interceptor blocks request prompts containing:
 - the dashboard is a local operational tool and does not provide authentication or multi-user authorization
 - the interceptor is a global monkey-patch, so applications must understand that enforcement is process-wide
 - the repo does not yet ship a hardened deployment model for multi-host shared-ledger usage
+
+## Architectural Security
+
+Our security model is strictly bound by the [Six Architecture Principles](docs/ARCHITECTURE.md). 
+In particular, the principles of **Enforce locally, always** and **Fail to last-known-good, never open** are critical security features. The logic fabric must never bypass enforcement if the central control plane is offline, and all architectural decisions must preserve this deterministic, localized zero-trust model.
