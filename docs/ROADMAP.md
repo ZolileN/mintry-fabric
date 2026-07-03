@@ -58,18 +58,44 @@ The implementation currently covers the roadmap milestones through `v0.5.0`:
 - [x] Dashboard-driven budget allocation and revoke controls
 - [x] Shared SDK/dashboard workflow against the same SQLite ledger
 
-## Remaining Work Before v1.0.0
+## Phase 1 — Alpha (Control Plane Upgrade)
 
-### v1.0.0 - Production-Ready Release
+See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
-- [x] Resolve remaining known release/documentation mismatches
-- [ ] Promote a stable public API and publish the corresponding package version
-- [x] Full sync + async support
-- [x] Complete Python integration and API reference docs
-- [ ] Docker-based deployment option for a shared team ledger
-- [ ] SDK clients for TypeScript/JavaScript ecosystems (v0.6.0 - Completed)
-- [ ] Language-agnostic Sidecar Proxy (Go Daemon) to replace library monkey-patching
-- [ ] Clear deployment guidance for multi-process and multi-host usage
+### Dashboard credibility (§10 — do first)
+
+- [ ] Remove integration-test data from prospect-visible environments
+- [ ] Hide Expiry column until meaningful
+- [ ] Brand palette color consistency
+- [ ] Live Audit Feed: ALLOW / BLOCK / THROTTLE events, above the fold
+- [ ] KPI reframe: Protected Spend / Requests Blocked / Overspend Prevented
+
+### Policy plane
+
+- [ ] Polling policy sync (15–30s), version number, atomic swap
+- [ ] Local last-known-good policy cache
+- [ ] Signature verification on policy payloads before apply
+- [ ] Rollback semantics: ledger independent of policy version
+- [ ] Agent-grouped ledger view (UI layer)
+
+### Control plane infrastructure
+
+- [ ] Vercel + Supabase (skip Turso in Phase 1)
+- [ ] Batched telemetry POST from SDK to control plane
+
+## Phase 2 — Enterprise
+
+- [ ] Go/Rust sidecar, Alpine Docker, K8s/ECS deployment
+- [ ] Fleet budget: Option A static sub-budget partitioning
+- [ ] Full Agent-as-primary data model + org/project hierarchy
+- [ ] OPA bundle evaluation for policy distribution/signing
+- [ ] Secrets orchestration via customer Vault (alias-only)
+
+## Explicitly Deferred (§8)
+
+- Automatic model rerouting
+- Anomaly/recommendation engine
+- Push-based policy propagation (until enterprise SLA requires it)
 
 ## Ideas Under Consideration
 

@@ -159,6 +159,10 @@ class GlobalHTTPInterceptor:
             if any(p in prompt for p in prohibited):
                 mandate_id = self._get_mandate_id(request)
                 _print_log("security_violation", mandate_id=mandate_id, reason="prohibited_intent", prompt=prompt)
+                self.engine.wallet.log_decision(
+                    mandate_id, "block", 0.0,
+                    "Prohibited intent detected — security violation"
+                )
                 raise PermissionError("Mintry Logic Fabric: Prohibited Intent Detected (Security Violation).")
         except json.JSONDecodeError:
             pass

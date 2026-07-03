@@ -52,6 +52,10 @@ class PolicyEngine:
         # Phase 1: Expiry check
         if self.wallet.is_expired(mandate_id):
             mandate = self.wallet.get_mandate(mandate_id)
+            self.wallet.log_decision(
+                mandate_id, "block", 0.0,
+                f"Mandate expired — request rejected"
+            )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "expired",
@@ -66,6 +70,10 @@ class PolicyEngine:
 
         # Reject exhausted mandates
         if mandate.get("status") == "exhausted":
+            self.wallet.log_decision(
+                mandate_id, "block", 0.0,
+                f"Budget exhausted (${mandate.get('spent_usd', 0):.4f} / ${mandate.get('budget_usd', 0):.4f})"
+            )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "budget_exhausted",
@@ -77,6 +85,10 @@ class PolicyEngine:
 
         remaining = mandate['budget_usd'] - mandate['spent_usd']
         if remaining < 0.01:
+            self.wallet.log_decision(
+                mandate_id, "block", round(remaining, 4),
+                f"Insufficient headroom (${remaining:.4f} remaining)"
+            )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "budget_exhausted",
