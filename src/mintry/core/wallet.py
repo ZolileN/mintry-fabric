@@ -204,6 +204,12 @@ class MintryWallet:
                                     "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
                                     (mandate_id, "top_up", amount, f"Deposited ${amount:.4f} to increase limit")
                                 )
+                            elif action == "log_decision":
+                                mandate_id, decision_action, amount, details = args
+                                conn.execute(
+                                    "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
+                                    (mandate_id, decision_action, amount, details)
+                                )
                 except Exception as e:
                     print(f"[BG_WRITER_ERROR] {e}")
                 finally:
@@ -300,6 +306,10 @@ class MintryWallet:
                 self._spent_cache[mandate_id] = float(actual_cost)
 
         self._write_queue.put(("record_usage", (mandate_id, float(actual_cost))))
+
+    def log_decision(self, mandate_id: str, action: str, amount: float = 0.0, details: str = ""):
+        """Append an enforcement decision (allow/block/throttle) to the audit log."""
+        self._write_queue.put(("log_decision", (mandate_id, action, float(amount), details)))
 
     def get_spent(self, mandate_id):
         """Retrieve spent amount from cache."""

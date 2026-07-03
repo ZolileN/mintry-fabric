@@ -9,12 +9,11 @@
   --bg: #050505;
   --bg2: #0a0a0a;
   --bg3: #0f0f0f;
-  --mint: #0f8;
-  --blue: #0070f3;
-  --mint-dim: #00ff881f;
-  --blue-dim: #0070f31f;
-  --mint-glow: #00ff8840;
-  --blue-glow: #0070f340;
+  --mint: #10B981;
+  --mint-dim: #10b9811f;
+  --mint-glow: #10b98140;
+  --slate: #8a8a8a;
+  --amber: #f59e0b;
   --text: #f0f0f0;
   --text-secondary: #8a8a8a;
   --text-tertiary: #444;
@@ -58,7 +57,7 @@ body::before {
 .grid-bg {
   pointer-events: none;
   z-index: 0;
-  background-image: linear-gradient(#00ff8805 1px, transparent 1px), linear-gradient(90deg, #00ff8805 1px, transparent 1px);
+  background-image: linear-gradient(#10b98105 1px, transparent 1px), linear-gradient(90deg, #10b98105 1px, transparent 1px);
   background-size: 60px 60px;
   position: fixed;
   inset: 0;
@@ -210,8 +209,8 @@ body::before {
   color: var(--mint);
 }
 
-.kpi-value.blue {
-  color: var(--blue);
+.kpi-value.amber {
+  color: var(--amber);
 }
 
 /* Bento Grid structure */
@@ -411,11 +410,14 @@ body::before {
   font-weight: 600;
 }
 
-.event-action.create { color: var(--blue); }
+.event-action.create { color: var(--slate); }
 .event-action.top_up { color: var(--mint); }
-.event-action.spend { color: #fbbf24; }
+.event-action.spend { color: var(--amber); }
 .event-action.exhaust { color: var(--color-expired); }
 .event-action.expire { color: var(--text-secondary); }
+.event-action.allow { color: var(--mint); }
+.event-action.block { color: var(--color-expired); }
+.event-action.throttle { color: var(--amber); }
 
 .event-time {
   color: var(--text-tertiary);

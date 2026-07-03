@@ -5,6 +5,13 @@ This documentation set is aligned to the current code in `src/mintry`.
 > [!IMPORTANT]
 > **Read This First:** All development and feature design must strictly adhere to the [Six Architecture Principles](ARCHITECTURE.md). Features that violate these principles will be rejected.
 
+## Architecture
+
+| Document | Description |
+|---|---|
+| [Architecture Map](ARCHITECTURE.md) | Control plane / data plane topology and the Six Principles |
+| [Control Plane Spec](CONTROL_PLANE_SPEC.md) | Full implementation spec — policy model, phased roadmap, recorded decisions |
+
 ## Getting Started
 
 | Document | Description |

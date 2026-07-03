@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import threading
 from pathlib import Path
@@ -38,6 +39,23 @@ def get_proxy_client():
         limits = httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
         _thread_local.client = httpx.Client(limits=limits, timeout=10.0)
     return _thread_local.client
+
+def _is_integration_test_mandate(mandate_id: str) -> bool:
+    """Filter integration-test mandate IDs from prospect-visible dashboard views."""
+    lowered = mandate_id.lower()
+    if lowered.startswith("kill_switch_"):
+        return True
+    if lowered in ("smoke_task", "new-agent", "test agent", "mt_task_882x"):
+        return True
+    if re.search(r"test.*agent|agent.*test", lowered):
+        return True
+    return False
+
+
+def _should_hide_test_mandates() -> bool:
+    """When MINTRY_DEMO_MODE=1, hide integration-test mandate rows from dashboard."""
+    return os.getenv("MINTRY_DEMO_MODE", "").lower() in ("1", "true", "yes")
+
 
 class DashboardHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
@@ -213,19 +231,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         wallet.flush()
         conn = sqlite3.connect(db_resolved)
         try:
-            # Total mandates
-            total_mandates = conn.execute("SELECT COUNT(*) FROM mandates").fetchone()[0] or 0
-            
-            # Total budget
-            total_budget = conn.execute("SELECT SUM(max_usd) FROM mandates").fetchone()[0] or 0.0
-            
-            # Total spent
-            total_spent = conn.execute("SELECT SUM(spent_usd) FROM mandates").fetchone()[0] or 0.0
-            
-            # Mandates list
             mandates_rows = conn.execute(
                 "SELECT id, max_usd, spent_usd, status, expires_at FROM mandates ORDER BY spent_usd DESC"
             ).fetchall()
+
+            if _should_hide_test_mandates():
+                mandates_rows = [r for r in mandates_rows if not _is_integration_test_mandate(r[0])]
+
+            has_expiry = any(r[4] for r in mandates_rows)
+
             mandates = [
                 {
                     "id": r[0],
@@ -233,16 +247,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "spent_usd": r[2],
                     "remaining_headroom": round((r[1] or 0.0) - (r[2] or 0.0), 4),
                     "status": r[3],
-                    "expires_at": r[4] or "Never"
+                    "expires_at": r[4] if r[4] else None,
                 }
                 for r in mandates_rows
             ]
+
+            visible_ids = {m["id"] for m in mandates}
+            total_budget = sum(m["budget_usd"] or 0.0 for m in mandates)
+            total_spent = sum(m["spent_usd"] or 0.0 for m in mandates)
+            total_mandates = len(mandates)
             
             # Top mandates
-            top_rows = conn.execute(
-                "SELECT id, spent_usd FROM mandates ORDER BY spent_usd DESC LIMIT 5"
-            ).fetchall()
-            top_mandates = [{"id": r[0], "spent_usd": r[1]} for r in top_rows]
+            top_mandates = [
+                {"id": m["id"], "spent_usd": m["spent_usd"]}
+                for m in sorted(mandates, key=lambda x: x["spent_usd"], reverse=True)[:5]
+            ]
             
             # Recent history
             history_rows = conn.execute(
@@ -258,18 +277,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "details": r[5]
                 }
                 for r in history_rows
+                if r[2] in visible_ids or not _should_hide_test_mandates()
             ]
+
+            block_actions = {"block", "exhaust", "expire"}
+            requests_blocked = sum(1 for h in history if h["action"] in block_actions)
+            overspend_prevented = round(
+                sum(abs(h["amount"] or 0.0) for h in history if h["action"] == "block"),
+                4,
+            )
             
             return {
                 "stats": {
                     "total_mandates": total_mandates,
                     "total_budget": round(total_budget, 4),
                     "total_spent": round(total_spent, 4),
-                    "remaining_headroom": round(total_budget - total_spent, 4)
+                    "remaining_headroom": round(total_budget - total_spent, 4),
+                    "protected_spend": round(total_spent, 4),
+                    "requests_blocked": requests_blocked,
+                    "overspend_prevented": overspend_prevented,
+                    "active_agents": sum(1 for m in mandates if m["status"] == "active"),
                 },
                 "top_mandates": top_mandates,
                 "mandates": mandates,
-                "history": history
+                "history": history,
+                "has_expiry": has_expiry,
             }
         finally:
             conn.close()
