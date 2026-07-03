@@ -74,11 +74,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(response_bytes)))
-        self.end_headers()
-        self.wfile.write(response_bytes)
+        try:
+            self.end_headers()
+            self.wfile.write(response_bytes)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def handle(self):
-        super().handle()
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def handle_proxy(self, method: str):
         # 1. Read request headers and body
@@ -248,7 +254,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "budget_usd": r[1],
                     "spent_usd": r[2],
                     "remaining_headroom": round((r[1] or 0.0) - (r[2] or 0.0), 4),
-                    "status": r[3],
+                    "status": "exhausted" if (r[2] or 0.0) >= (r[1] or 0.0) else r[3],
                     "expires_at": r[4] if r[4] else None,
                 }
                 for r in mandates_rows
@@ -303,7 +309,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "top_mandates": top_mandates,
                 "mandates": mandates,
                 "history": history,
-                "has_expiry": has_expiry,
+                "has_expiry": False,
                 "policy_sync": self._get_policy_sync_status(),
             }
         finally:

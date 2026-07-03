@@ -121,15 +121,15 @@ class MintryWallet:
         # Explicitly name the columns so we don't hit the 4-column vs 3-value error
         conn.execute("""
             INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) 
-            VALUES ('mt_task_882x', 0.01, 0.0, 'active')
+            VALUES ('customer_support_agent', 0.01, 0.0, 'active')
         """)
 
         # Seed audit log for the default mandate if not present
-        cursor = conn.execute("SELECT COUNT(*) FROM mandate_audit_log WHERE mandate_id = 'mt_task_882x'")
+        cursor = conn.execute("SELECT COUNT(*) FROM mandate_audit_log WHERE mandate_id = 'customer_support_agent'")
         if cursor.fetchone()[0] == 0:
             conn.execute(
                 "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
-                ("mt_task_882x", "create", 0.01, "Seed mandate initialized")
+                ("customer_support_agent", "create", 0.01, "Seed mandate initialized")
             )
 
     def _bg_writer(self):
@@ -197,12 +197,12 @@ class MintryWallet:
                             elif action == "exhaust_mandate":
                                 mandate_id, = args
                                 conn.execute(
-                                    "UPDATE mandates SET status = 'exhausted' WHERE id = ?",
+                                    "UPDATE mandates SET max_usd = spent_usd, status = 'exhausted' WHERE id = ?",
                                     (mandate_id,)
                                 )
                                 conn.execute(
                                     "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
-                                    (mandate_id, "exhaust", 0.0, "Mandate marked as exhausted")
+                                    (mandate_id, "exhaust", 0.0, "Mandate revoked (budget reduced to match spend)")
                                 )
                             elif action == "expire_mandate":
                                 mandate_id, expires_str = args
@@ -258,6 +258,7 @@ class MintryWallet:
         if mandate["status"] == "unknown":
             return False
         if mandate["spent_usd"] + cost > mandate["budget_usd"]:
+            self.log_decision(mandate_id, "block", cost, "Blocked: exceeds budget")
             return False
 
         self.record_usage(mandate_id, cost)

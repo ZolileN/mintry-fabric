@@ -204,7 +204,25 @@ export default function Dashboard() {
     return new Date(expires_at).toLocaleString();
   };
 
-  const colSpan = data.has_expiry ? 7 : 6;
+  const allocatedBudget = data.stats.total_budget || 0;
+  const cumulativeSpent = data.stats.total_spent || 0;
+  const utilization = allocatedBudget > 0 ? (cumulativeSpent / allocatedBudget) * 100 : 0;
+  
+  let utilizationStatus = 'Healthy';
+  let utilizationColor = 'var(--mint)';
+  if (utilization >= 95) {
+      utilizationStatus = 'Critical';
+      utilizationColor = '#ef4444'; // Red
+  } else if (utilization >= 85) {
+      utilizationStatus = 'Warning';
+      utilizationColor = '#f97316'; // Orange
+  } else if (utilization >= 60) {
+      utilizationStatus = 'Monitor';
+      utilizationColor = '#eab308'; // Amber
+  }
+
+  const activeAgents = data.stats.active_agents ?? data.mandates.filter(m => m.status === 'active').length;
+  const totalAgents = data.mandates.length;
 
   return (
     <>
@@ -223,9 +241,21 @@ export default function Dashboard() {
         <div className="section-label mint">{"// 01 — Governance indicators"}</div>
 
         <div className="kpi-grid">
+            <div className="bento-card kpi-card kpi-card-wide">
+                <div className="kpi-label">Allocated Budget</div>
+                <div className="kpi-value mint">${(data.stats.total_budget ?? 0).toFixed(4)}</div>
+            </div>
+            <div className="bento-card kpi-card kpi-card-wide">
+                <div className="kpi-label">Cumulative Spent</div>
+                <div className="kpi-value amber">${(data.stats.total_spent ?? 0).toFixed(4)}</div>
+            </div>
             <div className="bento-card kpi-card">
-                <div className="kpi-label">Protected Spend</div>
-                <div className="kpi-value mint">${(data.stats.protected_spend ?? data.stats.total_spent).toFixed(4)}</div>
+                <div className="kpi-label">Budget Utilization</div>
+                <div className="kpi-value">{utilization.toFixed(0)}%</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: utilizationColor }}></div>
+                    {utilizationStatus}
+                </div>
             </div>
             <div className="bento-card kpi-card">
                 <div className="kpi-label">Requests Blocked</div>
@@ -237,11 +267,11 @@ export default function Dashboard() {
             </div>
             <div className="bento-card kpi-card">
                 <div className="kpi-label">Active Agents</div>
-                <div className="kpi-value">{data.stats.active_agents ?? data.mandates.filter(m => m.status === 'active').length}</div>
+                <div className="kpi-value">{activeAgents} / {totalAgents}</div>
             </div>
         </div>
 
-        <div className="section-label mint">{"// 02 — Live decision engine"}</div>
+        <div className="section-label mint">{"// 02 — Live audit feed"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-12">
@@ -311,8 +341,8 @@ export default function Dashboard() {
             </div>
         </div>
 
-        {/* 05 — Policy Governance */}
-        <div className="section-label mint">{"// 05 — Policy governance"}</div>
+        {/* 05 — Mandate Synchronization */}
+        <div className="section-label mint">{"// 05 — Mandate Synchronization"}</div>
         <div className="bento-grid" style={{marginBottom: '1.5rem'}}>
           <div className="bento-card col-12">
             <div className="panel-header">
@@ -321,7 +351,7 @@ export default function Dashboard() {
             <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'1.5rem', padding:'0.5rem 0'}}>
               {/* policy_version */}
               <div style={{display:'flex', flexDirection:'column', gap:'0.4rem'}}>
-                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>policy_version</span>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>mandate_revision</span>
                 <span style={{fontFamily:'var(--font-mono)', fontSize:'1.6rem', fontWeight:700, color: data.policy_sync?.policy_version != null ? 'var(--mint)' : 'var(--text-tertiary)'}}>
                   {data.policy_sync?.policy_version != null ? `v${data.policy_sync.policy_version}` : '—'}
                 </span>
@@ -376,13 +406,15 @@ export default function Dashboard() {
                                 <th>Budget</th>
                                 <th>Spent</th>
                                 <th>Remaining</th>
+                                <th>Mandate Revision</th>
+                                <th>Last Synced</th>
                                 {data.has_expiry && <th>Expiry</th>}
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.mandates.length === 0 ? (
-                              <tr><td colSpan={colSpan} style={{textAlign:'center', color:'var(--text-tertiary)', fontFamily:'var(--font-mono)', fontSize:'12px'}}>{"// Database ledger empty"}</td></tr>
+                              <tr><td colSpan={data.has_expiry ? 9 : 8} style={{textAlign:'center', color:'var(--text-tertiary)', fontFamily:'var(--font-mono)', fontSize:'12px'}}>{"// Mandate ledger empty"}</td></tr>
                             ) : (
                               data.mandates.map((m, i: number) => {
                                 let badgeClass = 'badge-active';
@@ -399,6 +431,14 @@ export default function Dashboard() {
                                       <td>${m.budget_usd.toFixed(4)}</td>
                                       <td>${m.spent_usd.toFixed(4)}</td>
                                       <td>${remaining.toFixed(4)}</td>
+                                      <td>
+                                          <span className="badge" style={{background: 'rgba(255,255,255,0.05)', color: '#8a8a8a'}}>
+                                              v{data.policy_sync?.policy_version || '—'}
+                                          </span>
+                                      </td>
+                                      <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>
+                                          {data.policy_sync?.last_synced_at ? new Date(data.policy_sync.last_synced_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : '—'}
+                                      </td>
                                       {data.has_expiry && (
                                         <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>
                                           {formatExpiry(m.expires_at) ?? '—'}
@@ -420,7 +460,7 @@ export default function Dashboard() {
             </div>
             <div className="bento-card col-4">
                 <div className="panel-header">
-                    <h2>Allocate / Update Agent</h2>
+                    <h2>Issue Mandate</h2>
                 </div>
                 <form onSubmit={handleUpsert} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
