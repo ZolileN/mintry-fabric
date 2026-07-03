@@ -6,6 +6,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
+from mintry.core.opa import OPABundleEvaluator
+
 
 class MintryWallet:
     _instances = {}
@@ -56,6 +58,10 @@ class MintryWallet:
         # Start the background writer thread
         self._bg_thread = threading.Thread(target=self._bg_writer, daemon=True)
         self._bg_thread.start()
+
+        # OPA Evaluator (Phase 2)
+        self._opa = OPABundleEvaluator()
+        self.policy_cache = None  # Injected by __init__.py
 
     @property
     def conn(self):
@@ -257,8 +263,26 @@ class MintryWallet:
         mandate = self.get_mandate(mandate_id)
         if mandate["status"] == "unknown":
             return False
+
+        # Phase 2: Embedded OPA Policy Check
+        if self._opa and self.policy_cache:
+            active_policy = self.policy_cache.get_active_policy()
+            if active_policy:
+                # Inject the hot-swapped policy into the evaluator
+                self._opa._bundle_cache = {"data": {"mintry": active_policy.mandates}}
+                # Query the specific agent's mandate policy
+                opa_result = self._opa.evaluate(f"data.mintry.mandate.{mandate_id}", {"cost": cost})
+                if opa_result is not None:
+                    if isinstance(opa_result, dict) and "max_usd" in opa_result:
+                        # Dynamically override the budget from the central policy
+                        mandate["budget_usd"] = float(opa_result["max_usd"])
+                    elif opa_result is False:
+                        # Policy explicitly blocks
+                        self.log_decision(mandate_id, "block", cost, "Blocked by OPA policy")
+                        return False
+
         if mandate["spent_usd"] + cost > mandate["budget_usd"]:
-            self.log_decision(mandate_id, "block", cost, "Blocked: exceeds budget")
+            self.log_decision(mandate_id, "block", cost, f"Blocked: exceeds budget")
             return False
 
         self.record_usage(mandate_id, cost)

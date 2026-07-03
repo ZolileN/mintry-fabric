@@ -2,6 +2,12 @@ import os
 from contextlib import contextmanager
 from typing import Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from mintry.interceptors.global_http import GlobalHTTPInterceptor
 from mintry.core.engine import PolicyEngine
 from mintry.core.wallet import MintryWallet
@@ -114,6 +120,9 @@ def init(
     engine.policy_sync_worker = policy_sync_worker
     engine.control_plane = control_plane
     engine.agent_id = agent_id  # expose for dashboard and telemetry
+
+    # Inject policy cache into wallet for OPA hot-path evaluation
+    wallet.policy_cache = policy_cache
 
     # Install the global hooks
     interceptor.install()

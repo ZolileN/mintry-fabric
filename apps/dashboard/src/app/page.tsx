@@ -25,7 +25,7 @@ ChartJS.register(
   Filler
 );
 
-interface Mandate { id: string; status: string; budget_usd: number; spent_usd: number; expires_at: string | null; remaining_headroom?: number; }
+interface Mandate { id: string; status: string; budget_usd: number; spent_usd: number; expires_at: string | null; remaining_headroom?: number; policy_version?: number | null; }
 interface LogEvent { action: string; timestamp: string; mandate_id: string; details?: string; amount?: number; }
 interface TopMandate { id: string; spent_usd: number; }
 interface DashboardStats {
@@ -77,6 +77,8 @@ export default function Dashboard() {
 
   const [formState, setFormState] = useState({ id: '', budget: '', expiry: '' });
   const [feedback, setFeedback] = useState({ text: '', type: '' });
+  const [policyForm, setPolicyForm] = useState({ agentId: '', policyJson: '' });
+  const [policyFeedback, setPolicyFeedback] = useState({ text: '', type: '' });
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -124,6 +126,35 @@ export default function Dashboard() {
     } catch {
         showFeedback("Connection error", "error");
     }
+  };
+  const handlePushPolicy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let parsedJson;
+      try {
+        parsedJson = JSON.parse(policyForm.policyJson);
+      } catch {
+        setPolicyFeedback({ text: 'Invalid JSON format', type: 'error' });
+        setTimeout(() => setPolicyFeedback({ text: '', type: '' }), 4000);
+        return;
+      }
+
+      const res = await fetch('/api/policies/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: policyForm.agentId, mandates: parsedJson })
+      });
+      
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to push policy');
+      
+      setPolicyFeedback({ text: `Policy v${json.version} pushed successfully`, type: 'success' });
+      setPolicyForm({ agentId: '', policyJson: '' });
+      fetchSummary();
+    } catch (err: unknown) {
+      setPolicyFeedback({ text: err instanceof Error ? err.message : String(err), type: 'error' });
+    }
+    setTimeout(() => setPolicyFeedback({ text: '', type: '' }), 4000);
   };
 
   const revokeMandate = async (id: string) => {
@@ -433,7 +464,7 @@ export default function Dashboard() {
                                       <td>${remaining.toFixed(4)}</td>
                                       <td>
                                           <span className="badge" style={{background: 'rgba(255,255,255,0.05)', color: '#8a8a8a'}}>
-                                              v{data.policy_sync?.policy_version || '—'}
+                                              v{m.policy_version || data.policy_sync?.policy_version || '—'}
                                           </span>
                                       </td>
                                       <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>
@@ -477,6 +508,22 @@ export default function Dashboard() {
                     </div>
                     <button type="submit" className="btn-submit">Apply Mandate</button>
                     <div className={`feedback-message ${feedback.type}`}>{feedback.text}</div>
+                </form>
+
+                <div className="panel-header" style={{ marginTop: '2rem' }}>
+                    <h2>Push Policy Revision</h2>
+                </div>
+                <form onSubmit={handlePushPolicy} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="policy-agent-id">Agent ID</label>
+                        <input type="text" id="policy-agent-id" required placeholder="e.g. customer_support_agent" className="form-input" value={policyForm.agentId} onChange={e => setPolicyForm({...policyForm, agentId: e.target.value})} />
+                    </div>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="policy-json">Policy JSON (Rego Bundle)</label>
+                        <textarea id="policy-json" required rows={5} placeholder='{"max_usd": 150.0}' className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={policyForm.policyJson} onChange={e => setPolicyForm({...policyForm, policyJson: e.target.value})} />
+                    </div>
+                    <button type="submit" className="btn-submit" style={{background: 'var(--blue)'}}>Sign & Push vNext</button>
+                    <div className={`feedback-message ${policyFeedback.type}`}>{policyFeedback.text}</div>
                 </form>
             </div>
         </div>

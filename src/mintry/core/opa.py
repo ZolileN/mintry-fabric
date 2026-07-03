@@ -132,7 +132,7 @@ class OPABundleEvaluator:
 
         try:
             path_parts = query.replace("data.", "").split(".")
-            result = self._bundle_cache
+            result = self._bundle_cache.get("data", {})
 
             for part in path_parts:
                 if isinstance(result, dict):
