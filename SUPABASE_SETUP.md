@@ -1,9 +1,9 @@
 # Supabase Integration Setup Guide - Phase 1
 
 ## Your Supabase Details
-- **Project URL**: https://wudyreicddrqdysplxai.supabase.co
-- **Anon Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzM3MjEsImV4cCI6MjA5ODY0OTcyMX0.QInwCLoz4X3b06IauXEBaEd5CfX7OuVSyffCTUH0LG8`
-- **Service Role Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzA3MzcyMSwiZXhwIjoyMDk4NjQ5NzIxfQ.Rdn_NRZ7sLkA34PWhDwG8nLWzu6E_fLc8EQq4jkEWM8`
+- **Project URL**: `<YOUR_SUPABASE_URL>`
+- **Anon Key**: `<YOUR_ANON_KEY>`
+- **Service Role Key**: `<YOUR_SERVICE_ROLE_KEY>`
 
 ## Setup Steps
 
@@ -11,14 +11,14 @@
 
 Run in your terminal:
 ```bash
-export MINTRY_CONTROL_PLANE_URL=https://wudyreicddrqdysplxai.supabase.co
-export MINTRY_CONTROL_PLANE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzM3MjEsImV4cCI6MjA5ODY0OTcyMX0.QInwCLoz4X3b06IauXEBaEd5CfX7OuVSyffCTUH0LG8
+export MINTRY_CONTROL_PLANE_URL=<YOUR_SUPABASE_URL>
+export MINTRY_CONTROL_PLANE_KEY=<YOUR_ANON_KEY>
 ```
 
 Or add to your `.env` file:
 ```
-MINTRY_CONTROL_PLANE_URL=https://wudyreicddrqdysplxai.supabase.co
-MINTRY_CONTROL_PLANE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzM3MjEsImV4cCI6MjA5ODY0OTcyMX0.QInwCLoz4X3b06IauXEBaEd5CfX7OuVSyffCTUH0LG8
+MINTRY_CONTROL_PLANE_URL=<YOUR_SUPABASE_URL>
+MINTRY_CONTROL_PLANE_KEY=<YOUR_ANON_KEY>
 ```
 
 ### Step 2: Create Database Tables
