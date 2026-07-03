@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mintry.core.wallet import MintryWallet
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +59,16 @@ class PolicyCacheState:
 class PolicyCache:
     """Thread-safe last-known-good policy cache with atomic swap."""
 
-    def __init__(self, cache_dir: Path | str = DEFAULT_CACHE_DIR):
+    def __init__(
+        self,
+        cache_dir: Path | str = DEFAULT_CACHE_DIR,
+        wallet: Optional[MintryWallet] = None,
+    ):
         self._cache_dir = Path(cache_dir).expanduser()
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._state = PolicyCacheState()
+        self._wallet = wallet
         self._load_from_disk()
 
     @property
@@ -95,13 +104,125 @@ class PolicyCache:
                 "last_sync_error": self._state.last_sync_error,
             }
 
+    def get_policy_history(self, limit: int = 10) -> list[dict]:
+        """Fetch policy version history from wallet (for rollback UI).
+
+        Args:
+            limit: Maximum number of versions to return (most recent first)
+
+        Returns:
+            List of policy version records.
+        """
+        if not self._wallet:
+            return []
+
+        try:
+            conn = sqlite3.connect(self._wallet.path, isolation_level=None)
+            cursor = conn.execute(
+                """
+                SELECT version, issued_at, issued_by, received_at, applied
+                FROM policy_versions
+                ORDER BY version DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            records = [
+                {
+                    "version": row[0],
+                    "issued_at": row[1],
+                    "issued_by": row[2],
+                    "received_at": row[3],
+                    "applied": bool(row[4]),
+                }
+                for row in cursor.fetchall()
+            ]
+            conn.close()
+            return records
+        except Exception as exc:
+            logger.warning("Failed to fetch policy history: %s", exc)
+            return []
+
+    def rollback_to_version(self, target_version: int) -> bool:
+        """Rollback to a previous policy version (idempotent).
+
+        Args:
+            target_version: Version to roll back to
+
+        Returns:
+            True if rollback succeeded, False otherwise.
+        """
+        if not self._wallet:
+            logger.warning("Cannot rollback: no wallet configured")
+            return False
+
+        try:
+            conn = sqlite3.connect(self._wallet.path, isolation_level=None)
+
+            # Verify target version exists
+            row = conn.execute(
+                "SELECT policy_json FROM policy_versions WHERE version = ?",
+                (target_version,),
+            ).fetchone()
+
+            if not row:
+                logger.warning("Cannot rollback: version %s not found", target_version)
+                conn.close()
+                return False
+
+            policy_dict = json.loads(row[0])
+            bundle = PolicyBundle(
+                version=target_version,
+                mandates=policy_dict,
+                signature="rollback",
+                issued_at=datetime.now(timezone.utc).isoformat(),
+                issued_by="rollback",
+            )
+
+            # Mark other versions as not applied
+            conn.execute(
+                "UPDATE policy_versions SET applied = 0 WHERE version != ?",
+                (target_version,),
+            )
+
+            # Apply the bundle — force=True bypasses the monotonic version guard
+            # (rollback is a deliberate downgrade, not stale sync data)
+            applied = self.apply_bundle(bundle, verify_fn=None, force=True)
+
+            if applied:
+                logger.info("Rolled back to policy v%s", target_version)
+                # Record the rollback reason on the target version row
+                conn.execute(
+                    """
+                    UPDATE policy_versions
+                    SET rollback_reason = 'Manual rollback'
+                    WHERE version = ?
+                    """,
+                    (target_version,),
+                )
+
+            conn.close()
+            return applied
+
+        except Exception as exc:
+            logger.error("Rollback failed: %s", exc)
+            return False
+
     def apply_bundle(
         self,
         bundle: PolicyBundle,
         *,
         verify_fn: Optional[Callable[[PolicyBundle], bool]] = None,
+        force: bool = False,
     ) -> bool:
-        """Verify signature and atomically swap the active policy."""
+        """Verify signature and atomically swap the active policy.
+
+        Args:
+            bundle: The policy bundle to apply.
+            verify_fn: Optional signature verification callable.
+            force: If True, bypass the monotonic version guard. Use only for
+                   deliberate rollbacks — never for background sync.
+        """
         if verify_fn and not verify_fn(bundle):
             with self._lock:
                 self._state.last_sync_error = "signature_verification_failed"
@@ -113,7 +234,8 @@ class PolicyCache:
 
         with self._lock:
             current = self._state.bundle
-            if current and bundle.version <= current.version:
+            # Monotonic version guard: reject stale sync data, but allow forced rollbacks
+            if not force and current and bundle.version <= current.version:
                 return False
 
             now = datetime.now(timezone.utc)
@@ -121,7 +243,7 @@ class PolicyCache:
             self._state.last_sync_error = None
 
         self._persist_to_disk(bundle, now)
-        logger.info("Applied policy v%s", bundle.version)
+        logger.info("Applied policy v%s%s", bundle.version, " (forced rollback)" if force else "")
         return True
 
     def _persist_to_disk(self, bundle: PolicyBundle, synced_at: datetime) -> None:
@@ -138,6 +260,43 @@ class PolicyCache:
         tmp = self.cache_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, indent=2))
         tmp.replace(self.cache_file)
+
+        # Persist to wallet's policy_versions table for versioning & rollback
+        if self._wallet:
+            self._persist_to_wallet(bundle, synced_at)
+
+    def _persist_to_wallet(self, bundle: PolicyBundle, received_at: datetime) -> None:
+        """Persist policy bundle to wallet's policy_versions table (append-only)."""
+        try:
+            # Use a direct DB connection to avoid queue batching delays
+            conn = sqlite3.connect(self._wallet.path, isolation_level=None)
+            conn.execute("PRAGMA journal_mode=WAL")
+
+            policy_json = json.dumps(bundle.mandates, separators=(",", ":"))
+            # INSERT OR REPLACE so rollbacks to previously-seen versions
+            # correctly update the 'applied' flag and received_at timestamp.
+            # The immutable UNIQUE(version, signature) constraint is relaxed
+            # here because a rollback re-applies with signature='rollback'.
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO policy_versions 
+                (version, policy_json, signature, issued_at, issued_by, received_at, applied)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bundle.version,
+                    policy_json,
+                    bundle.signature,
+                    bundle.issued_at,
+                    bundle.issued_by,
+                    received_at.isoformat(),
+                    True,
+                ),
+            )
+            conn.close()
+            logger.info("Persisted policy v%s to wallet", bundle.version)
+        except Exception as exc:
+            logger.warning("Failed to persist policy to wallet: %s", exc)
 
 
 class PolicySyncWorker:

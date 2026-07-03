@@ -7,7 +7,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from http.server import HTTPServer
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -61,6 +61,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
     db_path: ClassVar[str | None] = None
     dashboard_ui_origin: ClassVar[str] = "http://127.0.0.1:3000"
+    policy_cache: ClassVar[Optional[object]] = None  # PolicyCache instance
+    control_plane: ClassVar[Optional[object]] = None  # SupabaseControlPlaneClient instance
 
     def log_message(self, format, *args):
         # Override to suppress standard HTTP logging to keep console clean
@@ -302,9 +304,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "mandates": mandates,
                 "history": history,
                 "has_expiry": has_expiry,
+                "policy_sync": self._get_policy_sync_status(),
             }
         finally:
             conn.close()
+
+    @classmethod
+    def _get_policy_sync_status(cls) -> dict:
+        """Get policy sync status from the policy cache (Principle 4: visible staleness)."""
+        if not cls.policy_cache:
+            return {
+                "policy_version": None,
+                "last_synced_at": None,
+                "last_sync_error": None,
+                "control_plane_healthy": False,
+            }
+
+        sync_status = cls.policy_cache.get_sync_status()
+        control_plane_healthy = cls.control_plane.health_check() if cls.control_plane else False
+
+        return {
+            "policy_version": sync_status.get("policy_version"),
+            "last_synced_at": sync_status.get("last_synced_at"),
+            "last_sync_error": sync_status.get("last_sync_error"),
+            "control_plane_healthy": control_plane_healthy,
+        }
 
 def start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):
     """Starts the local web server hosting the dashboard."""
@@ -329,7 +353,11 @@ def start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):
         if "127.0.0.1" not in _gh._LLM_HOSTS:
             _gh._LLM_HOSTS.append("127.0.0.1")
         
-        mintry.init(api_key=api_key, db_path=db_path)
+        engine = mintry.init(api_key=api_key, db_path=db_path)
+        
+        # Attach policy cache and control plane to dashboard handler for sync status
+        DashboardHandler.policy_cache = getattr(engine, "policy_cache", None)
+        DashboardHandler.control_plane = getattr(engine, "control_plane", None)
     except Exception as e:
         print(f"Warning: Failed to auto-initialize Mintry Logic Fabric in dashboard: {e}")
 

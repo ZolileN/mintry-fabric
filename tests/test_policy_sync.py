@@ -1,9 +1,11 @@
 """Tests for policy cache and sync worker."""
 
 import json
+import sqlite3
 from pathlib import Path
 
 from mintry.core.policy_sync import PolicyBundle, PolicyCache, PolicySyncWorker
+from mintry.core.wallet import MintryWallet
 
 
 def test_policy_cache_atomic_swap(tmp_path):
@@ -72,3 +74,130 @@ def test_policy_sync_worker_poll_once(tmp_path):
     assert cache.get_active_policy().version == 1
 
     assert worker.poll_once() is False
+
+
+def test_policy_cache_persists_to_wallet(tmp_path):
+    """Test that policy versions are persisted to wallet database."""
+    db_path = tmp_path / "test.db"
+    wallet = MintryWallet(db_path=str(db_path))
+    cache = PolicyCache(cache_dir=tmp_path, wallet=wallet)
+
+    bundle = PolicyBundle(
+        version=1,
+        mandates={"agent_a": {"max_usd": 100.0}},
+        signature="sig_v1",
+        issued_at="2026-01-01T00:00:00Z",
+        issued_by="control-plane",
+    )
+
+    assert cache.apply_bundle(bundle) is True
+
+    # Verify it was persisted to wallet
+    conn = sqlite3.connect(db_path)
+    cursor = conn.execute("SELECT version, signature FROM policy_versions WHERE version = 1")
+    row = cursor.fetchone()
+    conn.close()
+
+    assert row is not None
+    assert row[0] == 1
+    assert row[1] == "sig_v1"
+
+
+def test_get_policy_history(tmp_path):
+    """Test retrieving policy version history."""
+    db_path = tmp_path / "test.db"
+    wallet = MintryWallet(db_path=str(db_path))
+    cache = PolicyCache(cache_dir=tmp_path, wallet=wallet)
+
+    # Apply multiple versions
+    for v in range(1, 4):
+        bundle = PolicyBundle(
+            version=v,
+            mandates={"agent": {"max_usd": float(v * 100)}},
+            signature=f"sig_v{v}",
+            issued_at="2026-01-01T00:00:00Z",
+            issued_by="control-plane",
+        )
+        cache.apply_bundle(bundle)
+
+    # Get history
+    history = cache.get_policy_history(limit=10)
+
+    # Should have 3 versions (most recent first)
+    assert len(history) == 3
+    assert history[0]["version"] == 3  # Most recent
+    assert history[2]["version"] == 1  # Oldest
+
+
+def test_get_policy_history_limit(tmp_path):
+    """Test that policy history respects limit."""
+    db_path = tmp_path / "test.db"
+    wallet = MintryWallet(db_path=str(db_path))
+    cache = PolicyCache(cache_dir=tmp_path, wallet=wallet)
+
+    # Apply 5 versions
+    for v in range(1, 6):
+        bundle = PolicyBundle(
+            version=v,
+            mandates={"agent": {"max_usd": float(v * 100)}},
+            signature=f"sig_v{v}",
+            issued_at="2026-01-01T00:00:00Z",
+        )
+        cache.apply_bundle(bundle)
+
+    # Get history with limit
+    history = cache.get_policy_history(limit=2)
+
+    assert len(history) == 2
+    assert history[0]["version"] == 5  # Most recent
+
+
+def test_rollback_to_version(tmp_path):
+    """Test rolling back to a previous policy version."""
+    db_path = tmp_path / "test.db"
+    wallet = MintryWallet(db_path=str(db_path))
+    cache = PolicyCache(cache_dir=tmp_path, wallet=wallet)
+
+    # Apply versions 1, 2, 3
+    for v in range(1, 4):
+        bundle = PolicyBundle(
+            version=v,
+            mandates={"agent": {"max_usd": float(v * 100)}},
+            signature=f"sig_v{v}",
+            issued_at="2026-01-01T00:00:00Z",
+        )
+        cache.apply_bundle(bundle)
+
+    # Verify we're at v3
+    assert cache.get_active_policy().version == 3
+
+    # Rollback to v1
+    success = cache.rollback_to_version(1)
+    assert success is True
+
+    # Verify we're back to v1
+    active = cache.get_active_policy()
+    assert active.version == 1
+    assert active.mandates["agent"]["max_usd"] == 100.0
+
+
+def test_rollback_to_nonexistent_version(tmp_path):
+    """Test rollback to a version that doesn't exist."""
+    db_path = tmp_path / "test.db"
+    wallet = MintryWallet(db_path=str(db_path))
+    cache = PolicyCache(cache_dir=tmp_path, wallet=wallet)
+
+    bundle = PolicyBundle(
+        version=1,
+        mandates={"agent": {"max_usd": 100.0}},
+        signature="sig_v1",
+        issued_at="2026-01-01T00:00:00Z",
+    )
+    cache.apply_bundle(bundle)
+
+    # Try to rollback to nonexistent version
+    success = cache.rollback_to_version(999)
+    assert success is False
+
+    # Should still be at v1
+    assert cache.get_active_policy().version == 1

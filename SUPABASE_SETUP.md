@@ -1,0 +1,173 @@
+# Supabase Integration Setup Guide - Phase 1
+
+## Your Supabase Details
+- **Project URL**: https://wudyreicddrqdysplxai.supabase.co
+- **Anon Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzM3MjEsImV4cCI6MjA5ODY0OTcyMX0.QInwCLoz4X3b06IauXEBaEd5CfX7OuVSyffCTUH0LG8`
+- **Service Role Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzA3MzcyMSwiZXhwIjoyMDk4NjQ5NzIxfQ.Rdn_NRZ7sLkA34PWhDwG8nLWzu6E_fLc8EQq4jkEWM8`
+
+## Setup Steps
+
+### Step 1: Export Environment Variables
+
+Run in your terminal:
+```bash
+export MINTRY_CONTROL_PLANE_URL=https://wudyreicddrqdysplxai.supabase.co
+export MINTRY_CONTROL_PLANE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzM3MjEsImV4cCI6MjA5ODY0OTcyMX0.QInwCLoz4X3b06IauXEBaEd5CfX7OuVSyffCTUH0LG8
+```
+
+Or add to your `.env` file:
+```
+MINTRY_CONTROL_PLANE_URL=https://wudyreicddrqdysplxai.supabase.co
+MINTRY_CONTROL_PLANE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZHlyZWljZGRycWR5c3BseGFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzM3MjEsImV4cCI6MjA5ODY0OTcyMX0.QInwCLoz4X3b06IauXEBaEd5CfX7OuVSyffCTUH0LG8
+```
+
+### Step 2: Create Database Tables
+
+1. Go to: https://app.supabase.com
+2. Select your project: `wudyreicddrqdysplxai`
+3. Click **SQL Editor** → **New Query**
+4. Paste this SQL and run it:
+
+```sql
+-- Policy Bundles Table
+CREATE TABLE IF NOT EXISTS policy_bundles (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  agent_id text NOT NULL,
+  version integer NOT NULL,
+  policy_json jsonb NOT NULL,
+  signature text NOT NULL,
+  issued_at timestamptz DEFAULT now(),
+  issued_by text,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(agent_id, version)
+);
+
+-- Telemetry Events Table
+CREATE TABLE IF NOT EXISTS telemetry_events (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  agent_id text NOT NULL,
+  mandate_id text NOT NULL,
+  action text NOT NULL,
+  amount numeric NOT NULL,
+  details jsonb,
+  recorded_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+```
+
+### Step 3: Generate ES256 Keypair
+
+Run this in your terminal:
+```bash
+cd /home/zolile/Documents/mintry-fabric
+python3 << 'EOF'
+from mintry.core.crypto import generate_policy_keypair
+pub, priv = generate_policy_keypair()
+print("=== PUBLIC KEY ===")
+print(pub)
+print("\n=== PRIVATE KEY ===")
+print(priv)
+EOF
+```
+
+Save the output securely! You'll see output like:
+```
+=== PUBLIC KEY ===
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+-----END PUBLIC KEY-----
+
+=== PRIVATE KEY ===
+-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIIGlq...
+-----END EC PRIVATE KEY-----
+```
+
+### Step 4: Export Keypair (Optional but Recommended)
+
+Add to your environment:
+```bash
+export MINTRY_POLICY_PUBLIC_KEY="MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEk1CZAXaOJOLeCrGKK15dpyPSOYUN
+r2CI4n3wVdtq2Ddd7vpy8NGMFvLIW0oLBmpqkH/kYlU8KfPlDoXtkgmdxw=="
+export MINTRY_POLICY_PRIVATE_KEY="MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgkpMdWUT0oKmdT0vN
+KgPFNDG9DsvdyLLSjIMLWneGuyWhRANCAASTUJkBdo4k4t4KsYorXl2nI9I5hQ2v
+YIjiffBV22rYN13u+nLw0YwW8shbSgsGamqQf+RiVTwp8+UOhe2SCZ3H"
+```
+
+Or add to `.env`:
+```
+MINTRY_POLICY_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----\n...
+MINTRY_POLICY_PRIVATE_KEY=-----BEGIN EC PRIVATE KEY-----\n...
+```
+
+### Step 5: Run Phase 1 Demo
+
+```bash
+cd /home/zolile/Documents/mintry-fabric
+python phase1_demo.py
+```
+
+You should see:
+- ✓ Policy cache initialized
+- ✓ Control plane client initialized
+- ✓ Policy bundle created and signed
+- ✓ Bundle applied to cache
+- ✓ Policy history retrieved
+- ✓ All Six Architecture Principles validated
+
+## Verification
+
+### Check Supabase Tables
+
+After running the demo, verify data was written:
+
+1. **Policy Bundles**: https://app.supabase.com → Table Editor → `policy_bundles`
+   - Should see: agent_id, version, policy_json, signature
+
+2. **Telemetry Events**: https://app.supabase.com → Table Editor → `telemetry_events`
+   - Should see: agent_id, mandate_id, action, amount
+
+### Check Dashboard
+
+Once running, visit: http://localhost:8000
+
+Look for policy sync status showing:
+- `policy_version`: current version
+- `last_synced_at`: timestamp of last sync
+- `control_plane_healthy`: true/false
+
+## Troubleshooting
+
+### "Cannot connect to control plane"
+- Verify `MINTRY_CONTROL_PLANE_URL` is set correctly
+- Check internet connectivity
+- Verify Supabase project is active: https://app.supabase.com
+
+### "Signature verification failed"
+- Only occurs if `MINTRY_POLICY_PUBLIC_KEY` is set
+- Either remove it (for Phase 1) or ensure keypair matches
+- Public key must correspond to private key used for signing
+
+### "Tables don't exist"
+- Go to Supabase SQL Editor and run the CREATE TABLE statements manually
+- Check that no error messages appear
+
+### "No modules found"
+- Ensure you're in `/home/zolile/Documents/mintry-fabric` directory
+- Run `python -m pip install -e .` to install in development mode
+
+## Next Steps
+
+1. ✅ Tables created
+2. ✅ Keypair generated
+3. ✅ Environment variables set
+4. Run Phase 1 demo to validate end-to-end integration
+5. Check dashboard for policy sync status
+6. Review telemetry data in Supabase
+
+Once Phase 1 is validated, Phase 2 will add:
+- OPA embedded runtime
+- Policy versioning UI
+- Vercel policy signer
+- Multi-agent support
+- Continuous policy tuning

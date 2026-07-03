@@ -4,7 +4,7 @@ import threading
 import httpx
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 
 
 class Mandate:
@@ -20,6 +20,11 @@ class Mandate:
 
 
 class PolicyEngine:
+    # Policy sync infrastructure (dynamically attached by mintry.init())
+    policy_cache: Optional[Any] = None
+    control_plane: Optional[Any] = None
+    telemetry_batcher: Optional[Any] = None
+
     def __init__(self, wallet, webhook_url: Optional[str] = None):
         self.wallet = wallet
         self.api_key = None

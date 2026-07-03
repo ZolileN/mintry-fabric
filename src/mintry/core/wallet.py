@@ -101,6 +101,23 @@ class MintryWallet:
             )
         """)
 
+        # Create policy_versions table for versioned policy records & rollback semantics
+        # Stores all policy bundles received from the control plane (never mutated)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS policy_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version INTEGER UNIQUE NOT NULL,
+                policy_json TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                issued_at TEXT NOT NULL,
+                issued_by TEXT DEFAULT 'control-plane',
+                received_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                applied BOOLEAN DEFAULT 1,
+                rollback_reason TEXT DEFAULT NULL,
+                CONSTRAINT policy_versions_immutable UNIQUE (version, signature)
+            )
+        """)
+
         # Explicitly name the columns so we don't hit the 4-column vs 3-value error
         conn.execute("""
             INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) 

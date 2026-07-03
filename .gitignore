@@ -12,3 +12,4 @@ vouchers.db-shm
 
 # Environment
 .env
+.env.supabase

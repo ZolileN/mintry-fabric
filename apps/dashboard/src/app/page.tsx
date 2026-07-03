@@ -37,12 +37,19 @@ interface DashboardStats {
   overspend_prevented: number;
   active_agents: number;
 }
+interface PolicySync {
+  policy_version: number | null;
+  last_synced_at: string | null;
+  last_sync_error: string | null;
+  control_plane_healthy: boolean;
+}
 interface DashboardData {
   stats: DashboardStats;
   mandates: Mandate[];
   top_mandates: TopMandate[];
   history: LogEvent[];
   has_expiry?: boolean;
+  policy_sync?: PolicySync;
 }
 
 export default function Dashboard() {
@@ -60,6 +67,12 @@ export default function Dashboard() {
     top_mandates: [],
     history: [],
     has_expiry: false,
+    policy_sync: {
+      policy_version: null,
+      last_synced_at: null,
+      last_sync_error: null,
+      control_plane_healthy: false,
+    },
   });
 
   const [formState, setFormState] = useState({ id: '', budget: '', expiry: '' });
@@ -296,6 +309,55 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+        </div>
+
+        {/* 05 — Policy Governance */}
+        <div className="section-label mint">{"// 05 — Policy governance"}</div>
+        <div className="bento-grid" style={{marginBottom: '1.5rem'}}>
+          <div className="bento-card col-12">
+            <div className="panel-header">
+              <h2>Control Plane Sync Status</h2>
+            </div>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'1.5rem', padding:'0.5rem 0'}}>
+              {/* policy_version */}
+              <div style={{display:'flex', flexDirection:'column', gap:'0.4rem'}}>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>policy_version</span>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'1.6rem', fontWeight:700, color: data.policy_sync?.policy_version != null ? 'var(--mint)' : 'var(--text-tertiary)'}}>
+                  {data.policy_sync?.policy_version != null ? `v${data.policy_sync.policy_version}` : '—'}
+                </span>
+              </div>
+              {/* last_synced_at */}
+              <div style={{display:'flex', flexDirection:'column', gap:'0.4rem'}}>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>last_synced_at</span>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'13px', color: data.policy_sync?.last_synced_at ? 'var(--text-primary)' : 'var(--text-tertiary)', wordBreak:'break-all'}}>
+                  {data.policy_sync?.last_synced_at
+                    ? new Date(data.policy_sync.last_synced_at).toLocaleString()
+                    : '—'}
+                </span>
+                {data.policy_sync?.last_sync_error && (
+                  <span style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--amber)', marginTop:'0.2rem'}}>
+                    ⚠ {data.policy_sync.last_sync_error}
+                  </span>
+                )}
+              </div>
+              {/* control_plane_healthy */}
+              <div style={{display:'flex', flexDirection:'column', gap:'0.4rem'}}>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>control_plane_healthy</span>
+                <div style={{display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'0.2rem'}}>
+                  <div style={{
+                    width:'10px', height:'10px', borderRadius:'50%',
+                    background: data.policy_sync?.control_plane_healthy ? '#10B981' : '#EF4444',
+                    boxShadow: data.policy_sync?.control_plane_healthy ? '0 0 8px #10B981' : '0 0 8px #EF4444',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{fontFamily:'var(--font-mono)', fontSize:'13px', fontWeight:600,
+                    color: data.policy_sync?.control_plane_healthy ? 'var(--mint)' : '#EF4444'}}>
+                    {data.policy_sync?.control_plane_healthy ? 'true' : 'false'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="section-label">{"// 04 — Agent ledger & administration"}</div>
