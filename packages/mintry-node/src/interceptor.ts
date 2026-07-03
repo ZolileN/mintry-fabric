@@ -61,7 +61,7 @@ export function installInterceptor(wallet: MintryWallet) {
     const isLlm = isLlmRequest(urlStr);
     
     // Check if we have an active mandate in context, otherwise fallback to headers or default
-    let mandateId = 'mt_task_882x';
+    let mandateId = 'customer_support_agent';
     const activeMandate = mandateStorage.getStore();
     
     if (activeMandate) {

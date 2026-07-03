@@ -31,8 +31,8 @@ export class MintryWallet {
     this._initSchema();
     
     // Seed default mandate if not exists
-    if (this.getMandate('mt_task_882x').status === 'unknown') {
-      this.createMandate('mt_task_882x', 1.0);
+    if (this.getMandate('customer_support_agent').status === 'unknown') {
+      this.createMandate('customer_support_agent', 1.0);
     }
   }
 

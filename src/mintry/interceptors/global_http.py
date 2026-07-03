@@ -169,7 +169,7 @@ class GlobalHTTPInterceptor:
 
     def _get_mandate_id(self, request: httpx.Request) -> str:
         """Extract mandate ID from request headers, falling back to the seed mandate."""
-        return request.headers.get("x-mintry-mandate", "mt_task_882x")
+        return request.headers.get("x-mintry-mandate", "customer_support_agent")
 
     def _raise_budget_error(self, engine, mandate_id: str):
         """Raise a MintryMandateExceeded with budget details."""
@@ -226,7 +226,7 @@ class GlobalHTTPInterceptor:
                     span.set_attribute("http.url", url_str)
 
                 if is_llm:
-                    mandate_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
+                    mandate_id = request.headers.get("x-mintry-mandate", "customer_support_agent")
 
                     if span.is_recording():
                         span.set_attribute("mintry.mandate_id", mandate_id)
@@ -281,7 +281,7 @@ class GlobalHTTPInterceptor:
                     span.set_attribute("http.url", url_str)
 
                 if is_llm:
-                    mandate_id = request.headers.get("x-mintry-mandate", "mt_task_882x")
+                    mandate_id = request.headers.get("x-mintry-mandate", "customer_support_agent")
 
                     if span.is_recording():
                         span.set_attribute("mintry.mandate_id", mandate_id)
