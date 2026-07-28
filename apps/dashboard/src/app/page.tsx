@@ -273,20 +273,12 @@ export default function Dashboard() {
 
         <div className="kpi-grid">
             <div className="bento-card kpi-card kpi-card-wide">
-                <div className="kpi-label">Allocated Budget</div>
-                <div className="kpi-value mint">${(data.stats.total_budget ?? 0).toFixed(4)}</div>
+                <div className="kpi-label">Protected Spend</div>
+                <div className="kpi-value mint">${(data.stats.protected_spend ?? data.stats.total_spent ?? 0).toFixed(4)}</div>
             </div>
             <div className="bento-card kpi-card kpi-card-wide">
-                <div className="kpi-label">Cumulative Spent</div>
-                <div className="kpi-value amber">${(data.stats.total_spent ?? 0).toFixed(4)}</div>
-            </div>
-            <div className="bento-card kpi-card">
-                <div className="kpi-label">Budget Utilization</div>
-                <div className="kpi-value">{utilization.toFixed(0)}%</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: utilizationColor }}></div>
-                    {utilizationStatus}
-                </div>
+                <div className="kpi-label">Allocated Budget</div>
+                <div className="kpi-value">${(data.stats.total_budget ?? 0).toFixed(4)}</div>
             </div>
             <div className="bento-card kpi-card">
                 <div className="kpi-label">Requests Blocked</div>
@@ -295,6 +287,14 @@ export default function Dashboard() {
             <div className="bento-card kpi-card">
                 <div className="kpi-label">Overspend Prevented</div>
                 <div className="kpi-value">${(data.stats.overspend_prevented ?? 0).toFixed(4)}</div>
+            </div>
+            <div className="bento-card kpi-card">
+                <div className="kpi-label">Budget Utilization</div>
+                <div className="kpi-value">{utilization.toFixed(0)}%</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: utilizationColor }}></div>
+                    {utilizationStatus}
+                </div>
             </div>
             <div className="bento-card kpi-card">
                 <div className="kpi-label">Active Agents</div>
@@ -308,6 +308,7 @@ export default function Dashboard() {
             <div className="bento-card col-12">
                 <div className="panel-header">
                     <h2>Live Audit Feed</h2>
+                    <span style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)'}}>ALLOW · BLOCK · SPEND</span>
                 </div>
                 <div className="event-list" style={{maxHeight: '320px'}}>
                     {data.history.length === 0 ? (
@@ -321,6 +322,9 @@ export default function Dashboard() {
                           </div>
                           <div className="event-body">
                               <code>{log.mandate_id}</code>: {log.details || ""}
+                              {typeof log.amount === 'number' && log.amount !== 0 ? (
+                                <span style={{marginLeft:'0.5rem', color:'var(--text-secondary)'}}>${log.amount.toFixed(4)}</span>
+                              ) : null}
                           </div>
                         </div>
                       ))
@@ -437,15 +441,14 @@ export default function Dashboard() {
                                 <th>Budget</th>
                                 <th>Spent</th>
                                 <th>Remaining</th>
-                                <th>Mandate Revision</th>
-                                <th>Last Synced</th>
+                                <th>Policy Version</th>
                                 {data.has_expiry && <th>Expiry</th>}
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.mandates.length === 0 ? (
-                              <tr><td colSpan={data.has_expiry ? 9 : 8} style={{textAlign:'center', color:'var(--text-tertiary)', fontFamily:'var(--font-mono)', fontSize:'12px'}}>{"// Mandate ledger empty"}</td></tr>
+                              <tr><td colSpan={data.has_expiry ? 8 : 7} style={{textAlign:'center', color:'var(--text-tertiary)', fontFamily:'var(--font-mono)', fontSize:'12px'}}>{"// Mandate ledger empty"}</td></tr>
                             ) : (
                               data.mandates.map((m, i: number) => {
                                 let badgeClass = 'badge-active';
@@ -466,9 +469,6 @@ export default function Dashboard() {
                                           <span className="badge" style={{background: 'rgba(255,255,255,0.05)', color: '#8a8a8a'}}>
                                               v{m.policy_version || data.policy_sync?.policy_version || '—'}
                                           </span>
-                                      </td>
-                                      <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>
-                                          {data.policy_sync?.last_synced_at ? new Date(data.policy_sync.last_synced_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : '—'}
                                       </td>
                                       {data.has_expiry && (
                                         <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>

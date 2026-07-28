@@ -18,7 +18,7 @@ from mintry.core.exceptions import MintryMandateExceeded
 from mintry.core.telemetry_batch import TelemetryBatcher
 from mintry import telemetry as _telemetry
 
-__version__ = "0.6.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "init",
@@ -31,6 +31,7 @@ __all__ = [
 
 # ── Global state ─────────────────────────────────────────────────────
 _global_engine: Optional[PolicyEngine] = None
+_global_db_path: Optional[str] = None
 
 
 def init(
@@ -45,6 +46,10 @@ def init(
     """
     Initializes the Mintry Logic Fabric globally.
 
+    Idempotent for the same resolved ``db_path``: a second call returns the
+    existing engine without reinstalling hooks. Calling ``init()`` with a
+    different database path closes the previous engine first.
+
     If ``api_key`` is not provided, falls back to the ``MINTRY_API_KEY``
     environment variable.
 
@@ -54,7 +59,7 @@ def init(
     - control_plane_public_key: ES256 public key for signature verification
     - policy_sync_interval: Polling interval in seconds (default: 20)
     """
-    global _global_engine
+    global _global_engine, _global_db_path
 
     resolved_key = api_key or os.environ.get("MINTRY_API_KEY")
     if not resolved_key or not isinstance(resolved_key, str):
@@ -62,6 +67,20 @@ def init(
             "MINTRY_API_KEY must be a non-empty string. "
             "Pass api_key= to mintry.init() or set the MINTRY_API_KEY environment variable."
         )
+
+    from pathlib import Path
+
+    resolved_db = str(Path(db_path).expanduser().resolve())
+
+    # Idempotent: reuse the live engine for the same ledger path
+    if _global_engine is not None and _global_db_path == resolved_db:
+        if not GlobalHTTPInterceptor._installed:
+            GlobalHTTPInterceptor(_global_engine).install()
+        return _global_engine
+
+    # Switching ledgers: tear down previous workers/hooks state carefully
+    if _global_engine is not None:
+        close()
 
     wallet = MintryWallet(db_path=db_path)
     engine = PolicyEngine(wallet, webhook_url=webhook_url)
@@ -157,13 +176,16 @@ def init(
         print(f"\u2728 Mintry Logic Fabric Active | No-GIL: True")
 
     _global_engine = engine
+    _global_db_path = resolved_db
     return engine
 
 
 def close() -> None:
     """Flush wallet writes and stop background workers for the global engine."""
-    global _global_engine
+    global _global_engine, _global_db_path
     if _global_engine is None:
+        _global_db_path = None
+        GlobalHTTPInterceptor._reset()
         return
     batcher = getattr(_global_engine, "telemetry_batcher", None)
     if batcher is not None:
@@ -175,6 +197,8 @@ def close() -> None:
     if wallet is not None and hasattr(wallet, "close"):
         wallet.close()
     _global_engine = None
+    _global_db_path = None
+    GlobalHTTPInterceptor._reset()
 
 
 def mandate(task: str, cap: float):

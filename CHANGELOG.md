@@ -8,21 +8,35 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) 
 
 _No unreleased changes._
 
-## [1.0.0] - 2026-05-20
+## [1.0.0] - 2026-07-28
 
 ### Added
 
-- Official TypeScript/Node.js SDK (`mintry-node`) mirroring Python ergonomics via `AsyncLocalStorage`.
-- Official Docker packaging (`Dockerfile` & `docker-compose.yml`) for the shared ledger deployment model.
-- `docs/RELEASE_NOTES_v1.0.0.md` detailing the production launch.
-- `ADR-003-sidecar-proxy.md` establishing the future Go daemon architecture.
-- Frozen public API surface using `__all__` in `__init__.py`.
+- Closed control-plane enforce loop: verified `PolicyCache` caps are applied in `PolicyEngine.authorize()` on the hot path (no network I/O)
+- Canonical ES256 policy signing shared by Python (`mintry.core.crypto`) and the dashboard (`apps/dashboard/src/lib/policy-crypto.ts`)
+- Dashboard admin auth (`MINTRY_DASHBOARD_ADMIN_TOKEN`, `/api/login` cookie) and Python API bearer (`MINTRY_DASHBOARD_API_TOKEN`)
+- Per-mandate spend reservations with release on failed / non-200 upstream calls
+- `TelemetryBatcher` started from `mintry.init()` when the control plane is configured
+- Idempotent `mintry.init()` for the same ledger path; `mintry.close()` flushes and resets hooks
+- Production readiness docs: `docs/APP_ANALYSIS.md`, `docs/PRODUCTION_READINESS_PLAN.md`
+- DoD test suites: `tests/test_production_readiness.py`, `tests/test_v1_dod.py`
 
 ### Changed
 
-- Replaced generic `PermissionError` with structured `MintryMandateExceeded` exceptions.
-- `mintry.init()` now automatically resolves the API key from the `MINTRY_API_KEY` environment variable.
-- Exposed the `mintry.mandate` top-level context manager to fulfill the "Three Lines" marketing promise.
+- Package version reflects a Phase 1 production gate (enforce loop + crypto + auth + hardening proofs)
+- Dashboard KPIs reframed (Protected Spend / Requests Blocked / Overspend Prevented)
+- Legacy `apps/sync-api` and experimental `packages/mintry-node` clearly labeled; Node package demoted to `0.1.0` private
+- Deployment / security docs aligned to Supabase control plane (not the Express stub)
+
+### Security
+
+- Policy mock signatures disabled unless `MINTRY_ALLOW_MOCK_SIGNATURES=1`
+- Disk last-known-good policy re-verified when a public key is configured
+- CORS on the Python dashboard API locked to `MINTRY_DASHBOARD_UI_ORIGIN`
+
+## [0.6.0] - 2026-07-28
+
+Interim control-plane alpha (enforce loop + crypto + auth foundation). Superseded by 1.0.0 the same day once DoD tests landed.
 
 ## [0.5.0] - 2026-05-20
 
@@ -79,42 +93,23 @@ _No unreleased changes._
 - interceptor installation is now idempotent and can be reset for tests
 - `PolicyEngine.authorize()` usable in both sync and async interception paths
 
-## [0.1.1] - 2026-05-02
+## [0.1.1] - 2026-04-28
+
+### Fixed
+
+- `Decimal` import usage in wallet top-up flow
+- hardcoded mandate routing replaced with header-based routing
 
 ### Added
 
 - `MintryWallet.create_mandate()`
 - `MintryWallet.exhaust_mandate()`
-- dynamic mandate routing through `X-Mintry-Mandate`
-- real `PolicyEngine.shield()` lifecycle support
+- richer budget failure messages
 
-### Fixed
-
-- fixed `Decimal` usage in wallet top-up flows
-- removed the old hardcoded mandate routing path by preferring request headers
-
-### Changed
-
-- budget failure errors now include mandate, budget, spent, and remaining headroom details
-- `MintryWallet.get_mandate()` now returns status and expiry metadata in addition to budget and spend
-
-## [0.1.0] - 2026-04-30
+## [0.1.0] - 2026-04-20
 
 ### Added
 
-- `mintry.init(api_key)` bootstrap entrypoint
-- `MintryWallet` SQLite ledger with WAL enabled
-- initial synchronous HTTPX interception
-- OpenAI metering path
-- `PolicyEngine` authorization flow
-- `AP2IntentMandate` model scaffold
-- Stripe mock bridge helper
-
-[Unreleased]: https://github.com/ZolileN/mintry-fabric/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.5.0...v1.0.0
-[0.5.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/ZolileN/mintry-fabric/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/ZolileN/mintry-fabric/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/ZolileN/mintry-fabric/releases/tag/v0.1.0
+- initial `httpx` interception
+- local SQLite WAL ledger
+- basic mandate budget checks

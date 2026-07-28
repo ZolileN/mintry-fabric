@@ -1,97 +1,72 @@
 # Mintry Fabric Roadmap
 
-This roadmap reflects the code currently present in the repository and the remaining work before a true production-ready `v1.0.0`.
+This roadmap reflects the code currently present in the repository.
 
 > [!IMPORTANT]
 > **Architectural Alignment:** All items on this roadmap, including "Ideas Under Consideration", are strictly subject to validation against the [Six Architecture Principles](ARCHITECTURE.md). Any feature that compromises deterministic, zero-latency local enforcement will be removed from the roadmap.
 
 ## Repository Status
 
-The implementation currently covers the roadmap milestones through `v0.5.0`:
+**Current release: `v1.0.0` (Phase 1 production gate).** See
+[PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md) and
+[CHANGELOG.md](../CHANGELOG.md).
 
-- sync and async interception
+Implemented:
+
+- sync and async interception with local SQLite WAL ledger
 - multi-provider metering and per-model pricing
-- mandate lifecycle and expiry enforcement
-- audit log and CLI inspection
-- local observability dashboard
-- dashboard-driven mandate allocation and revocation
-- JSON logs and webhook notifications
+- mandate lifecycle, expiry, audit log, CLI
+- local observability dashboard + admin auth
+- closed control-plane loop: canonical ES256 sign → poll → verify → enforce
+- batched telemetry; last-known-good policy cache
 
 ## Completed Milestones
 
-### v0.1.1 - Patch
+### v0.1.1 – v0.5.0
 
-- [x] Fix `Decimal` import usage in wallet top-up flow
-- [x] Replace hardcoded mandate routing with header-based routing
-- [x] Add `MintryWallet.create_mandate()`
-- [x] Add `MintryWallet.exhaust_mandate()`
-- [x] Improve budget failure messages with mandate details
+Prior milestones (interception, async, multi-provider, lifecycle, dashboard) are complete — see git history / CHANGELOG.
 
-### v0.2.0 - Async Support
+### v1.0.0 — Phase 1 production gate (2026-07-28)
 
-- [x] Patch `httpx.AsyncClient.send`
-- [x] Provide async-safe interception flow using separate request-time database connections where needed
-- [x] Keep `PolicyEngine.authorize()` usable in both sync and async interception paths
-- [x] Add async coverage in the test suite
-
-### v0.3.0 - Multi-Provider Support
-
-- [x] Anthropic metering
-- [x] Gemini metering
-- [x] Mistral metering
-- [x] Per-model pricing table
-- [x] Provider-agnostic mandate routing
-
-### v0.4.0 - Mandate Lifecycle and Governance
-
-- [x] Mandate expiry enforcement
-- [x] ES256 signature verification helpers for `AP2IntentMandate`
-- [x] Status transitions: `active`, `exhausted`, `expired`
-- [x] Append-only audit log
-- [x] CLI mandate listing and inspection
-
-### v0.5.0 - Observability and Dashboard
-
-- [x] Local web dashboard
-- [x] Structured JSON logs
-- [x] Webhook alerts
-- [x] Dashboard-driven budget allocation and revoke controls
-- [x] Shared SDK/dashboard workflow against the same SQLite ledger
+- [x] Canonical ES256 policy contract (Python + dashboard)
+- [x] PolicyCache wired into `PolicyEngine.authorize()`
+- [x] Dashboard admin token / login cookie; Python API bearer
+- [x] Spend reservations + durable flush/`close()`
+- [x] TelemetryBatcher from `init()`
+- [x] Idempotent `init()`; DoD test suites
+- [x] Legacy sync-api / Node SDK honesty labels
 
 ## Phase 1 — Alpha (Control Plane Upgrade)
 
 See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
-> **Execution plan:** Gap closure and production DoD are tracked in
-> [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md) (workstreams
-> P0–P7). Several policy-plane items below have **partial code** (cache,
-> polling helpers) but are **not done** until the enforce loop and crypto
-> contract land — see [APP_ANALYSIS.md](./APP_ANALYSIS.md).
+> **Status (v1.0.0):** Production readiness DoD is met for Phase 1.
+> Sidecar / fleet / org hierarchy remain Phase 2.
 
-### Dashboard credibility (§10 — do first)
+### Dashboard credibility (§10)
 
-- [ ] Remove integration-test data from prospect-visible environments
-- [ ] Hide Expiry column until meaningful
-- [ ] Brand palette color consistency
-- [ ] Live Audit Feed: ALLOW / BLOCK / THROTTLE events, above the fold
-- [ ] KPI reframe: Protected Spend / Requests Blocked / Overspend Prevented
+- [x] Remove integration-test data from prospect-visible environments (`MINTRY_DEMO_MODE`)
+- [x] Hide Expiry column until meaningful (`has_expiry`)
+- [x] Brand palette color consistency (#050505 / #10B981)
+- [x] Live Audit Feed: ALLOW / BLOCK / SPEND events, above the fold
+- [x] KPI reframe: Protected Spend / Requests Blocked / Overspend Prevented
 
 ### Policy plane
 
-- [ ] Polling policy sync (15–30s), version number, atomic swap *(partial: worker exists; not wired to interceptor)*
-- [ ] Local last-known-good policy cache *(partial: module exists; disk LKG not re-verified)*
-- [ ] Signature verification on policy payloads before apply *(broken across Next/Python contract)*
-- [ ] Interceptor enforces verified PolicyCache caps (close the loop)
-- [ ] Rollback semantics: ledger independent of policy version
-- [ ] Agent-grouped ledger view (UI layer)
+- [x] Polling policy sync (15–30s), version number, atomic swap
+- [x] Local last-known-good policy cache (disk LKG re-verified when key configured)
+- [x] Signature verification on policy payloads before apply (canonical ES256)
+- [x] Interceptor enforces verified PolicyCache caps (closed loop)
+- [x] Rollback semantics: ledger independent of policy version
+- [ ] Agent-grouped ledger view (UI layer) — deferred polish
 
 ### Control plane infrastructure
 
-- [ ] Vercel + Supabase (skip Turso in Phase 1) *(partial: routes + client exist; auth missing)*
-- [ ] Dashboard / admin authentication (Supabase Auth)
-- [ ] Batched telemetry POST from SDK to control plane *(partial: batcher not started from init)*
-- [ ] Canonical ES256 sign/verify + shared env names
-- [ ] Quarantine legacy `apps/sync-api`; honest `mintry-node` maturity label
+- [x] Vercel + Supabase (skip Turso in Phase 1)
+- [x] Dashboard / admin authentication (admin token + login cookie; full Supabase Auth UI optional)
+- [x] Batched telemetry POST from SDK to control plane
+- [x] Canonical ES256 sign/verify + shared env names
+- [x] Quarantine legacy `apps/sync-api`; honest `mintry-node` maturity label
 
 ## Phase 2 — Enterprise
 
@@ -116,10 +91,5 @@ See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
 ## Notes
 
-- Package version, CHANGELOG, and documentation claim a rich feature set; treat
-  advertised `1.0.0` as aspirational until
-  [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md) Definition of
-  Done is met (suggested interim: `0.6.0` after enforce-loop + crypto + auth).
 - Documentation in this folder is written against the current code in `src/mintry`.
-- Remaining Phase 1 production blockers are enumerated as P0–P7 in the
-  production readiness plan (not Docker alone).
+- Phase 2 items are intentionally out of the `1.0.0` gate.

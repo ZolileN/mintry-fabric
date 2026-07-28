@@ -1,52 +1,37 @@
-# Mintry Fabric v1.0.0 Release Notes
+# Release Notes — Mintry Fabric v1.0.0
 
-We are thrilled to announce the official **v1.0.0** production-ready release of Mintry Fabric!
+**Date:** 2026-07-28  
+**Scope:** Phase 1 production gate (Python SDK + local ledger + Supabase control plane)
 
-Mintry Fabric is the universal logic fabric for the agentic economy. It provides programmatic budget controls, observability, and security interceptors directly at the transport layer, ensuring your AI agents never exceed their fiscal mandates.
+## Headline
 
-## Key Features in v1.0.0
+Central governance now actually governs traffic: signed policy bundles are
+verified locally, cached as last-known-good, and enforced on the `httpx`
+interceptor hot path with **zero control-plane network I/O**.
 
-### The "Three Lines" Promise Delivered
-Both our Python and Node.js SDKs have been officially unified around our beautiful "three lines of code" ergonomics. By securely tracking state via `contextvars` in Python and `AsyncLocalStorage` in Node.js, your AI agents are protected without requiring any complex architectural changes.
+## What’s in
 
-**Python:**
-```python
-import mintry
-mintry.init()
-with mintry.mandate("task:nightly_summarizer", cap=50.00):
-    openai.chat.completions.create(...) # Fully protected & metered
+- Canonical ES256 sign/verify (dashboard + Python)
+- `PolicyEngine.authorize()` reads `PolicyCache` caps
+- Dashboard admin token / login cookie; Python API bearer token
+- Spend reservations under concurrency; `mintry.close()` flush
+- Telemetry batching from `init()`
+- Idempotent `init()` for the same ledger path
+- Honest labeling of legacy `sync-api` and experimental `mintry-node`
+
+## Upgrade notes
+
+1. Set `MINTRY_POLICY_PUBLIC_KEY` on agents and `MINTRY_POLICY_PRIVATE_KEY` on the signer.
+2. Set `MINTRY_DASHBOARD_ADMIN_TOKEN` / `MINTRY_DASHBOARD_API_TOKEN` for shared deployments.
+3. Do **not** set `MINTRY_ALLOW_MOCK_SIGNATURES` in production.
+4. Prefer Supabase as the control plane; treat `apps/sync-api` as demo-only.
+
+## Out of scope (Phase 2)
+
+Sidecar proxy, fleet-wide atomic budgets, org/project hierarchy, full Supabase Auth UI.
+
+## Verify
+
+```bash
+uv run pytest tests/test_production_readiness.py tests/test_v1_dod.py -q
 ```
-
-**TypeScript/Node.js:**
-```typescript
-import mintry from 'mintry-node';
-mintry.init();
-await mintry.mandate("task:nightly_summarizer", 50.00, async () => {
-    await fetch("https://api.openai.com/v1/chat/completions", { ... });
-});
-```
-
-### Universal Observability Dashboard
-Run `mintry dashboard` locally to instantly visualize real-time AI spend, manage mandate lifecycles, and view your append-only audit feed. The dashboard shares a synchronous SQLite WAL connection with the SDKs, providing zero-latency telemetry.
-
-### Multi-Provider Interception
-Mintry Fabric v1.0.0 silently intercepts traffic to the big four LLM providers out of the box:
-- OpenAI (`api.openai.com`)
-- Anthropic (`api.anthropic.com`)
-- Google Gemini (`generativelanguage.googleapis.com`)
-- Mistral (`api.mistral.ai`)
-
-### Programmable Exception Handling
-Budget exhaustion and mandate expiry now throw structured `MintryMandateExceeded` errors. This empowers developers to programmatically catch failures and fall back to cheaper models or alert administrators, rather than dealing with generic permission exceptions.
-
-### Docker "Shared Ledger" Support
-We've officially published our Docker deployment blueprint, demonstrating how your application containers and the Mintry Observability Dashboard can safely coordinate and share fiscal state via Docker volumes.
-
-## What's Next? (The Sidecar Proxy)
-With v1.0.0 out the door, we have formally adopted **ADR-003**, establishing our path towards a language-agnostic Go daemon. This standalone Sidecar Proxy will eventually replace the SDK monkey-patching approach, allowing any language (Java, Swift, Rust) to interface with Mintry by simply setting the `HTTP_PROXY` environment variable.
-
-## Getting Started
-- Python: `uv add mintry-fabric` or `pip install mintry-fabric`
-- Node.js: `npm install mintry-node`
-
-For full API documentation, see `docs/API_REFERENCE.md`.

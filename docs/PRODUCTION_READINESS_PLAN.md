@@ -1,6 +1,6 @@
 # Production Readiness Plan — Tighten the Bolts
 
-**Status:** Ready for implementation  
+**Status:** Phase 1 DoD met — shipped as `v1.0.0`  
 **Source:** [`APP_ANALYSIS.md`](./APP_ANALYSIS.md) gaps + [`CONTROL_PLANE_SPEC.md`](./CONTROL_PLANE_SPEC.md) + Six Principles  
 **Goal:** Close the control-plane → enforce loop and ship a credible production `v1.0.0` for Phase 1 (Python SDK + Vercel/Supabase dashboard).
 
@@ -150,8 +150,8 @@ Production dashboard allocate/revoke should **update the next policy version** (
 - [x] E2E test: policy vN cap $1.00 with $0.99 spent → next LLM call blocked without hitting control plane
 - [x] E2E test: unreachable control plane → LKG still enforces previous cap
 - [x] E2E test: invalid signature → cache not swapped; audit/log event recorded
-- [ ] Test spy: interceptor path makes zero outbound sockets to control plane
-- [ ] Repeated `init()` is idempotent (same engine/interceptor; no dual wallets)
+- [x] Test spy: interceptor path makes zero outbound sockets to control plane
+- [x] Repeated `init()` is idempotent (same engine/interceptor; no dual wallets)
 
 ### Principle check
 
@@ -187,10 +187,10 @@ All dashboard and Python admin routes are open. Service-role key behind unauthen
 
 ### Acceptance
 
-- [ ] Unauthenticated `POST /api/policies/sign` → 401
-- [ ] Unauthenticated mandate upsert/revoke via Next → 401
-- [ ] Python mutate without token (when required) → 401
-- [ ] SECURITY.md and DEPLOYMENT.md updated
+- [x] Unauthenticated `POST /api/policies/sign` → 401 *(when `MINTRY_REQUIRE_AUTH=1` / production + admin token)*
+- [x] Unauthenticated mandate upsert/revoke via Next → 401 *(same gate)*
+- [x] Python mutate without token (when required) → 401
+- [x] SECURITY.md and DEPLOYMENT.md updated
 
 ### Principle check
 
@@ -219,9 +219,9 @@ Pre-flight uses flat `$0.01` headroom; metering is post-flight async → concurr
 
 ### Acceptance
 
-- [ ] Concurrent test cannot spend past cap beyond documented reservation bound
-- [ ] Process shutdown flushes pending writes in tests
-- [ ] No silent drop of wallet write tasks
+- [x] Concurrent test cannot spend past cap beyond documented reservation bound
+- [x] Process shutdown flushes pending writes in tests
+- [x] No silent drop of wallet write tasks *(failed batches are re-queued)*
 
 ### Principle check
 
@@ -248,9 +248,9 @@ Aligns with CONTROL_PLANE_SPEC §10, plus analysis bugs.
 
 ### Acceptance
 
-- [ ] Prospect demo shows no integration-test mandate ids when `MINTRY_DEMO_MODE=1`
-- [ ] Expiry column hidden unless real expiries exist
-- [ ] First load without control plane does not block ~7s on every refresh (cached health)
+- [x] Prospect demo shows no integration-test mandate ids when `MINTRY_DEMO_MODE=1`
+- [x] Expiry column hidden unless real expiries exist
+- [x] First load without control plane does not block ~7s on every refresh (cached health)
 
 ---
 
@@ -269,8 +269,8 @@ Aligns with CONTROL_PLANE_SPEC §10, plus analysis bugs.
 
 ### Acceptance
 
-- [ ] Integration test: spend → batcher queue → mock control plane receives events
-- [ ] Control plane down → enforcement unaffected; errors visible in sync/telemetry status
+- [x] Integration test: spend → batcher queue → mock control plane receives events
+- [x] Control plane down → enforcement unaffected; errors visible in sync/telemetry status
 
 ---
 
@@ -291,8 +291,8 @@ Aligns with CONTROL_PLANE_SPEC §10, plus analysis bugs.
 
 ### Acceptance
 
-- [ ] New contributor reading DEPLOYMENT + ARCHITECTURE gets one topology
-- [ ] Node package cannot be `npm install`ed as a broken `1.0.0` main entry without warning
+- [x] New contributor reading DEPLOYMENT + ARCHITECTURE gets one topology
+- [x] Node package cannot be `npm install`ed as a broken `1.0.0` main entry without warning
 
 ---
 
