@@ -4,6 +4,16 @@ All notable changes to Mintry Fabric are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [1.2.0] - 2026-07-28
+
+### Added
+
+- Full Supabase Auth UI for the dashboard (`/login`): email/password, magic link, PKCE callback
+- Middleware session refresh; production UI redirects to `/login` when unauthenticated
+- Mutating APIs accept Supabase session (`issued_by` = user email) with optional `MINTRY_DASHBOARD_ALLOWED_EMAILS`
+- Admin token remains break-glass (login tab + Bearer / cookie)
+- Nav session badge + Sign out
+
 ## [1.1.1] - 2026-07-28
 
 ### Changed

@@ -18,7 +18,7 @@ from mintry.core.exceptions import MintryMandateExceeded
 from mintry.core.telemetry_batch import TelemetryBatcher
 from mintry import telemetry as _telemetry
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 __all__ = [
     "init",

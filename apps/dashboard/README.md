@@ -1,6 +1,6 @@
 # Mintry Dashboard
 
-Next.js App Router UI for local spend observability and policy administration.
+Next.js App Router UI for spend observability and policy administration.
 
 ## Run locally
 
@@ -8,11 +8,26 @@ Next.js App Router UI for local spend observability and policy administration.
 2. `npm install && npm run dev`
 3. Open **http://localhost:3000** (not `127.0.0.1` — see `AGENTS.md`)
 
-## Auth
+## Auth (Supabase Auth UI)
 
-Set `MINTRY_DASHBOARD_ADMIN_TOKEN` for mutating routes. Log in via `POST /api/login` with `{ "token": "..." }` (httpOnly cookie) or send `Authorization: Bearer …`.
+Primary: **Supabase email/password or magic link** at `/login`.
 
-Forward the same (or separate) token to Python with `MINTRY_DASHBOARD_API_TOKEN`.
+```bash
+# apps/dashboard/.env.local (or root .env loaded by Next)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+# optional:
+# MINTRY_DASHBOARD_ALLOWED_EMAILS=you@company.com
+# MINTRY_REQUIRE_AUTH=1
+```
+
+In the Supabase dashboard: Authentication → enable Email provider; add redirect URL
+`http://localhost:3000/auth/callback` (and your production origin).
+
+Break-glass: admin token via the **Admin token** tab on `/login`, or
+`POST /api/login` with `{ "token": "…" }`, or `Authorization: Bearer …`.
+
+Forward machine auth to Python with `MINTRY_DASHBOARD_API_TOKEN` (never put user JWTs on the LLM hot path).
 
 ## Policy signing
 

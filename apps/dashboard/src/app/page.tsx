@@ -13,6 +13,49 @@ import {
   Filler
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { useRouter } from 'next/navigation';
+
+function SessionBadge() {
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+  const [method, setMethod] = useState<string>("none");
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j) return;
+        setEmail(j.email || null);
+        setMethod(j.method || "none");
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
+
+  if (method === "none") {
+    return (
+      <a href="/login" className="nav-pill" style={{ textDecoration: "none" }}>
+        Sign in
+      </a>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)" }}>
+        {email || method}
+      </span>
+      <button type="button" className="btn" onClick={signOut} style={{ fontSize: "11px" }}>
+        Sign out
+      </button>
+    </div>
+  );
+}
 
 ChartJS.register(
   CategoryScale,
@@ -473,9 +516,12 @@ export default function Dashboard() {
 
       <nav className="nav-header">
         <a href="https://mintry-page.vercel.app/" className="nav-logo">MINTRY <span>.FABRIC</span></a>
-        <div className="nav-pill">
-            <div className="pulse-dot"></div>
-            v1.0.0 Observatory
+        <div style={{display:'flex', alignItems:'center', gap:'0.75rem'}}>
+          <SessionBadge />
+          <div className="nav-pill">
+              <div className="pulse-dot"></div>
+              v1.1 Observatory
+          </div>
         </div>
       </nav>
 

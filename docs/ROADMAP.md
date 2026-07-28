@@ -7,7 +7,7 @@ This roadmap reflects the code currently present in the repository.
 
 ## Repository Status
 
-**Current release: `v1.1.1`** (Phase 2 enterprise gate + promise-alignment tighten).
+**Current release: `v1.2.0`** (Supabase Auth UI + Phase 2 enterprise gate).
 
 See [PHASE2_PLAN.md](./PHASE2_PLAN.md), [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md),
 [RELEASE_NOTES_v1.1.0.md](./RELEASE_NOTES_v1.1.0.md), and [CHANGELOG.md](../CHANGELOG.md).
@@ -58,6 +58,14 @@ See [PHASE2_PLAN.md](./PHASE2_PLAN.md).
 - [x] **E4** OPA compile-at-sync materialization (no CLI on hot path)
 - [x] **E5** Vault alias-only secret references
 
+### v1.2.0 — Supabase Auth UI (2026-07-28)
+
+- [x] Dashboard `/login` — email/password + magic link (Supabase Auth)
+- [x] Middleware session refresh + production UI gate
+- [x] Mutating APIs accept Supabase session (subject = email) or admin token break-glass
+- [x] Optional `MINTRY_DASHBOARD_ALLOWED_EMAILS` allowlist
+- [x] Sign out + session badge in nav
+
 ### v1.1.1 — Promise alignment (2026-07-28)
 
 - [x] Central Sign & Push default when control plane configured
@@ -70,9 +78,10 @@ Ordered by leverage for the stated promise ("init once / author centrally / enfo
 
 1. **Sidecar HTTPS MITM** — inspect/meter TLS LLM traffic through `HTTP(S)_PROXY` without uninspected tunnels
 2. **Sidecar policy poller** — same verify → LKG → flat-cap loop as the Python SDK (today Python syncs; sidecar reads ledger)
-3. **Full Supabase Auth UI** — replace shared admin token for multi-user dashboard access
+3. ~~**Full Supabase Auth UI**~~ — done in `v1.2.0` (email/password + magic link; admin token break-glass)
 4. **Configurable intent blocklists** — move built-in phrases into signed policy (still deterministic allow/block)
 5. **Option B fleet hard cap** — Redis/Upstash atomic counter only if Option A partitions prove insufficient
+6. **Org RBAC / profiles table** — map authenticated users to agent allowlists beyond email allowlist env
 
 ## Explicitly Deferred
 

@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| `1.1.x` | Phase 2 enterprise gate (current) |
+| `1.2.x` | Supabase Auth UI + Phase 2 (current) |
+| `1.1.x` | Phase 2 enterprise gate |
 | `1.0.x` | Phase 1 production gate |
 | `main` / current repository state | Active development |
 
@@ -49,7 +50,7 @@ The interceptor blocks request prompts containing:
 ## Current Security Limitations
 
 - the intent blocklist is still largely built-in (policy-driven allow/deny flags are supported on central mandates)
-- multi-user org RBAC is partial (org compile → flat caps; shared admin token, not full SSO)
+- multi-user org RBAC is partial (email allowlist + Supabase Auth UI; shared admin token remains break-glass)
 - the interceptor is a global monkey-patch, so applications must understand that enforcement is process-wide
 - multi-host shared-ledger usage should use the Go sidecar scaffold (`apps/sidecar`); HTTPS MITM is not complete
 - when `MINTRY_CONTROL_PLANE_URL` is set, local mandate upsert/revoke requires `MINTRY_LOCAL_GOVERNANCE=1`

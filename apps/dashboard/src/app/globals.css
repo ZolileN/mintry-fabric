@@ -546,3 +546,98 @@ body::before {
 .feedback-message.error {
   color: var(--color-expired);
 }
+
+/* ── Login (Supabase Auth UI) ───────────────────────────────────────── */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  position: relative;
+  z-index: 1;
+}
+.login-atmosphere {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(16, 185, 129, 0.18), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(16, 185, 129, 0.06), transparent 50%),
+    var(--bg);
+  z-index: 0;
+}
+.login-panel {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  padding: 2.25rem 1.75rem;
+  border: 1px solid var(--border-bright);
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(16px);
+}
+.login-brand {
+  font-family: var(--font-display), var(--font-body), sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0 0 1.5rem;
+  color: var(--text);
+}
+.login-brand span {
+  color: var(--mint);
+}
+.login-title {
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+.login-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+}
+.login-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.login-tabs button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.login-tabs button.active {
+  border-color: var(--mint);
+  color: var(--mint);
+  background: var(--mint-dim);
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.login-form label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+.login-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin: 0.75rem 0 0;
+  line-height: 1.45;
+}
+.login-hint code {
+  color: var(--text-secondary);
+}

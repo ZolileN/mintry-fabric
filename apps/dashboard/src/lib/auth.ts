@@ -1,44 +1,34 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  ADMIN_COOKIE,
+  AuthResult,
+  authRequired,
+  emailAllowed,
+  supabaseAuthConfigured,
+  timingSafeEqual,
+} from "@/lib/auth-shared";
 
-export const ADMIN_COOKIE = "mintry_dashboard_auth";
-
-export type AuthResult =
-  | { ok: true; subject: string }
-  | { ok: false; response: NextResponse };
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  let out = 0;
-  for (let i = 0; i < a.length; i++) {
-    out |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return out === 0;
-}
-
-export function adminTokenConfigured(): boolean {
-  return Boolean(process.env.MINTRY_DASHBOARD_ADMIN_TOKEN);
-}
-
-export function authRequired(): boolean {
-  if (process.env.MINTRY_REQUIRE_AUTH === "1") {
-    return true;
-  }
-  if (process.env.NODE_ENV === "production" && adminTokenConfigured()) {
-    return true;
-  }
-  return false;
-}
+export {
+  ADMIN_COOKIE,
+  adminTokenConfigured,
+  authRequired,
+  emailAllowed,
+  supabaseAuthConfigured,
+  allowedEmails,
+  timingSafeEqual,
+} from "@/lib/auth-shared";
+export type { AuthResult } from "@/lib/auth-shared";
 
 /**
- * Require dashboard admin auth for mutating / privileged API routes.
+ * Require dashboard auth for mutating / privileged API routes.
  *
  * Accepted credentials (first match wins):
  * 1. Authorization: Bearer <MINTRY_DASHBOARD_ADMIN_TOKEN>
- * 2. httpOnly cookie set by POST /api/login
- * 3. When auth is not required (local/dev without token), allow with warning subject
+ * 2. httpOnly admin cookie from POST /api/login
+ * 3. Supabase Auth session (cookie) — subject = user email
+ * 4. When auth is not required (local/dev), allow with local_dev subject
  */
 export async function requireDashboardAuth(request: Request): Promise<AuthResult> {
   const adminToken = process.env.MINTRY_DASHBOARD_ADMIN_TOKEN;
@@ -48,7 +38,7 @@ export async function requireDashboardAuth(request: Request): Promise<AuthResult
     : "";
 
   if (adminToken && bearer && timingSafeEqual(bearer, adminToken)) {
-    return { ok: true, subject: "admin_token" };
+    return { ok: true, subject: "admin_token", method: "admin_token" };
   }
 
   if (adminToken) {
@@ -56,10 +46,42 @@ export async function requireDashboardAuth(request: Request): Promise<AuthResult
       const jar = await cookies();
       const cookieVal = jar.get(ADMIN_COOKIE)?.value || "";
       if (cookieVal && timingSafeEqual(cookieVal, adminToken)) {
-        return { ok: true, subject: "admin_cookie" };
+        return { ok: true, subject: "admin_cookie", method: "admin_cookie" };
       }
     } catch {
       // cookies() unavailable in some test contexts
+    }
+  }
+
+  if (supabaseAuthConfigured()) {
+    try {
+      const supabase = await createSupabaseServerClient();
+      if (supabase) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.email) {
+          if (!emailAllowed(user.email)) {
+            return {
+              ok: false,
+              response: NextResponse.json(
+                {
+                  error:
+                    "Forbidden — email is not on MINTRY_DASHBOARD_ALLOWED_EMAILS",
+                },
+                { status: 403 }
+              ),
+            };
+          }
+          return {
+            ok: true,
+            subject: user.email,
+            method: "supabase",
+          };
+        }
+      }
+    } catch {
+      // fall through
     }
   }
 
@@ -69,12 +91,12 @@ export async function requireDashboardAuth(request: Request): Promise<AuthResult
       response: NextResponse.json(
         {
           error:
-            "Unauthorized — POST /api/login with the admin token, or send Authorization: Bearer …",
+            "Unauthorized — sign in at /login (Supabase Auth), or use admin token via POST /api/login / Authorization: Bearer …",
         },
         { status: 401 }
       ),
     };
   }
 
-  return { ok: true, subject: "local_dev_unauthenticated" };
+  return { ok: true, subject: "local_dev_unauthenticated", method: "local_dev" };
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ADMIN_COOKIE } from "@/lib/auth";
+import { ADMIN_COOKIE } from "@/lib/auth-shared";
 
 export async function POST(request: Request) {
   const adminToken = process.env.MINTRY_DASHBOARD_ADMIN_TOKEN;

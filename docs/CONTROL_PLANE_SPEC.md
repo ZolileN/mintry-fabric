@@ -60,7 +60,7 @@ These govern every future feature decision. See [ARCHITECTURE.md](./ARCHITECTURE
 | Layer | Choice | Notes |
 | ----- | ------ | ----- |
 | Frontend + API routes | Vercel | Next.js dashboard, serverless webhooks |
-| Auth + relational data | Supabase | Profiles, billing tiers, mandate/policy configs |
+| Auth + relational data | Supabase Auth | Email/password + magic link UI (`/login`); admin token break-glass; optional `MINTRY_DASHBOARD_ALLOWED_EMAILS` |
 | Ledger sync / telemetry | Supabase (Phase 1) | Batched POST from SDK; Turso Sync deferred |
 
 ### 3.2 Turso — Phase 1 Alternative (Approved)
@@ -188,8 +188,10 @@ Company → department → project → agent budget inheritance.
 - [x] Full Agent-as-primary data model + org/project hierarchy (compile → flat caps)
 - [x] OPA bundle eval outcome: distribute via OPA-shaped envelopes; materialize flat rules at sync; custom evaluator for budget math; no OPA CLI on hot path
 - [x] Secrets orchestration via customer Vault (alias-only)
+- [x] Full Supabase Auth UI (`v1.2.0`) — email/password, magic link; admin token break-glass
 
 ### Phase 3 — Deferred
 
 - Routing, ML recommendations (§8)
 - Push-based policy propagation (WebSocket/SSE)
+- Profiles / org RBAC beyond email allowlist
