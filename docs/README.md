@@ -27,8 +27,9 @@ This documentation set is aligned to the current code in `src/mintry`.
 
 | Document | Description |
 |---|---|
+| [Deployment Guide](DEPLOYMENT.md) | **Vercel + Supabase + Python agent** production deploy |
 | [Troubleshooting](TROUBLESHOOTING.md) | Common local setup and runtime issues |
-| [Roadmap](ROADMAP.md) | What is implemented now and what still blocks `v1.0.0` |
+| [Roadmap](ROADMAP.md) | Current release status and next work |
 | [Sprint Plan](SPRINT_PLAN.md) | Current planning snapshot and next release priorities |
 
 ## Engineering

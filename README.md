@@ -65,6 +65,10 @@ cd apps/dashboard && npm run dev
 # open http://localhost:3000  (not 127.0.0.1)
 ```
 
+## Production deploy
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — Vercel dashboard + Supabase control plane + Python agents.
+
 ## License
 
 See [LICENSE](LICENSE).
