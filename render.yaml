@@ -1,0 +1,57 @@
+# Render Blueprint — Mintry Python ledger / dashboard API
+#
+# Serves `mintry dashboard` (SQLite observability JSON API) for the Vercel UI.
+# Set Vercel env:
+#   MINTRY_DASHBOARD_API_ORIGIN=https://<this-service>.onrender.com
+#   MINTRY_DASHBOARD_API_TOKEN=<same value as below>
+#
+# Note: KPIs reflect THIS service's SQLite disk only. Agents must write the same
+# ledger (shared volume / same host) or the API stays empty aside from seeds.
+#
+# Deploy: Render → New → Blueprint → this repo → path render.yaml
+
+services:
+  - type: web
+    name: mintry-python-api
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: master
+    autoDeployTrigger: commit
+    buildCommand: pip install .
+    startCommand: >
+      mintry dashboard
+      --db "${MINTRY_DB_PATH:-/var/data/vouchers.db}"
+      --host 0.0.0.0
+      --port $PORT
+    healthCheckPath: /api/summary
+    disk:
+      name: mintry-ledger
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      # Override repo `.python-version` (3.14+freethreaded) — Render needs a plain CPython.
+      - key: PYTHON_VERSION
+        value: "3.14.3"
+      - key: MINTRY_DB_PATH
+        value: /var/data/vouchers.db
+      - key: MINTRY_JSON_LOGS
+        value: "1"
+      # Must match Vercel MINTRY_DASHBOARD_API_TOKEN
+      - key: MINTRY_DASHBOARD_API_TOKEN
+        sync: false
+      # Optional: redirect `/` to your Vercel dashboard UI
+      - key: MINTRY_DASHBOARD_UI_ORIGIN
+        sync: false
+      # Optional control-plane status on /api/summary (not required for ledger reads)
+      - key: MINTRY_CONTROL_PLANE_URL
+        sync: false
+      - key: MINTRY_CONTROL_PLANE_KEY
+        sync: false
+      - key: MINTRY_SERVICE_ROLE_KEY
+        sync: false
+      # Keep mock signatures off in this hosted API
+      - key: MINTRY_ALLOW_MOCK_SIGNATURES
+        value: "0"
+      - key: MINTRY_LOCAL_GOVERNANCE
+        value: "0"
