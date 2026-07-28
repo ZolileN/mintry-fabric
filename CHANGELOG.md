@@ -4,9 +4,17 @@ All notable changes to Mintry Fabric are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
-## [Unreleased]
+## [1.1.0] - 2026-07-28
 
-_No unreleased changes._
+### Added
+
+- Phase 2 complete (E0–E5): see `docs/PHASE2_PLAN.md`
+- E0: Fleet Option A (`mintry.core.fleet`, `POST /api/fleets/partition`)
+- E1: Agent-grouped ledger rollups
+- E2: Org hierarchy compile (`mintry.core.org`, `POST /api/orgs/compile`)
+- E3: Go sidecar scaffold (`apps/sidecar` / `mintry-proxy`)
+- E4: OPA compile-at-sync materialization (`materialize_flat_rules`); no CLI on hot path
+- E5: Vault alias-only secrets (`mintry.core.secrets`, `POST /api/secrets/aliases`)
 
 ## [1.0.0] - 2026-07-28
 

@@ -58,7 +58,7 @@ See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 - [x] Signature verification on policy payloads before apply (canonical ES256)
 - [x] Interceptor enforces verified PolicyCache caps (closed loop)
 - [x] Rollback semantics: ledger independent of policy version
-- [ ] Agent-grouped ledger view (UI layer) — deferred polish
+- [x] Agent-grouped ledger view (UI layer) — deferred polish
 
 ### Control plane infrastructure
 
@@ -70,11 +70,14 @@ See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
 ## Phase 2 — Enterprise
 
-- [ ] Go/Rust sidecar, Alpine Docker, K8s/ECS deployment
-- [ ] Fleet budget: Option A static sub-budget partitioning
-- [ ] Full Agent-as-primary data model + org/project hierarchy
-- [ ] OPA bundle evaluation for policy distribution/signing
-- [ ] Secrets orchestration via customer Vault (alias-only)
+See [PHASE2_PLAN.md](./PHASE2_PLAN.md). **Gate complete (E0–E5).**
+
+- [x] Fleet budget: Option A static sub-budget partitioning (E0)
+- [x] Agent-grouped ledger view (UI layer) (E1)
+- [x] Go sidecar scaffold — `apps/sidecar` / `mintry-proxy` (E3; HTTPS MITM follow-up)
+- [x] Full Agent-as-primary data model + org/project hierarchy (E2)
+- [x] OPA bundle evaluation for policy distribution/signing (E4 — compile-at-sync)
+- [x] Secrets orchestration via customer Vault (alias-only) (E5)
 
 ## Explicitly Deferred (§8)
 

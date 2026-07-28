@@ -41,7 +41,8 @@ export async function GET(): Promise<Response> {
       data.mandates = data.mandates.map(
         (m: { id: string; [key: string]: unknown }) => ({
           ...m,
-          policy_version: versionMap[m.id] || null,
+          agent_id: (m.agent_id as string) || m.id,
+          policy_version: versionMap[m.id] || versionMap[(m.agent_id as string) || ""] || null,
         })
       );
     }

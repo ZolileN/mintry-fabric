@@ -182,12 +182,12 @@ Company → department → project → agent budget inheritance.
 
 ### Phase 2 — Enterprise
 
-- Go/Rust sidecar, K8s/ECS deployment
-- Option A fleet budget partitioning
-- Full Agent-as-primary data model
-- Projects/org hierarchy
-- OPA bundle eval outcome
-- Secrets orchestration via customer Vault (alias-only)
+- [x] Go sidecar scaffold (`apps/sidecar` / `mintry-proxy`; HTTPS MITM follow-up)
+- [x] Option A fleet budget partitioning (static shares → per-agent signed caps)
+- [x] Agent-grouped ledger (UI)
+- [x] Full Agent-as-primary data model + org/project hierarchy (compile → flat caps)
+- [x] OPA bundle eval outcome: distribute via OPA-shaped envelopes; materialize flat rules at sync; custom evaluator for budget math; no OPA CLI on hot path
+- [x] Secrets orchestration via customer Vault (alias-only)
 
 ### Phase 3 — Deferred
 
