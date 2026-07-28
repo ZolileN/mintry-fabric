@@ -168,6 +168,9 @@ def test_dashboard_api_requires_bearer_token(tmp_path: Path, monkeypatch):
     from mintry.core.dashboard import DashboardHandler
 
     monkeypatch.setenv("MINTRY_DASHBOARD_API_TOKEN", "secret-token")
+    # Allow local upsert in this auth-focused test (no CP gate interference)
+    monkeypatch.delenv("MINTRY_CONTROL_PLANE_URL", raising=False)
+    monkeypatch.setenv("MINTRY_LOCAL_GOVERNANCE", "1")
     DashboardHandler.db_path = str(tmp_path / "dash.db")
     # Ensure wallet exists
     MintryWallet(db_path=DashboardHandler.db_path)

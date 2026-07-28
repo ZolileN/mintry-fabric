@@ -1,7 +1,10 @@
 # Mintry Proxy (Phase 2 sidecar) — ADR-003
 
+**Status:** scaffold / not a drop-in HTTPS governance proxy yet.
+
 Language-agnostic HTTP forward proxy that enforces Mintry budgets against the
-local SQLite ledger (`vouchers.db`).
+local SQLite ledger (`vouchers.db`). The **supported production path** remains
+the Python SDK + Sign & Push control plane.
 
 ## Principles
 

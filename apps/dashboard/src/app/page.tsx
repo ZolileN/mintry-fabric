@@ -59,6 +59,11 @@ interface PolicySync {
   last_sync_error: string | null;
   control_plane_healthy: boolean;
 }
+interface Governance {
+  control_plane_configured: boolean;
+  local_governance: boolean;
+  authoring_mode: string;
+}
 interface DashboardData {
   stats: DashboardStats;
   mandates: Mandate[];
@@ -66,6 +71,7 @@ interface DashboardData {
   history: LogEvent[];
   has_expiry?: boolean;
   policy_sync?: PolicySync;
+  governance?: Governance;
 }
 
 export default function Dashboard() {
@@ -89,11 +95,19 @@ export default function Dashboard() {
       last_sync_error: null,
       control_plane_healthy: false,
     },
+    governance: {
+      control_plane_configured: false,
+      local_governance: true,
+      authoring_mode: 'local_ledger',
+    },
   });
 
   const [formState, setFormState] = useState({ id: '', budget: '', expiry: '' });
   const [feedback, setFeedback] = useState({ text: '', type: '' });
-  const [policyForm, setPolicyForm] = useState({ agentId: '', policyJson: '' });
+  const [policyForm, setPolicyForm] = useState({
+    agentId: '',
+    policyJson: '{\n  "customer_support_agent": { "max_usd": 50.0, "allow": true }\n}',
+  });
   const [policyFeedback, setPolicyFeedback] = useState({ text: '', type: '' });
   const [fleetForm, setFleetForm] = useState({
     fleetId: '',
@@ -198,7 +212,10 @@ export default function Dashboard() {
       if (!res.ok) throw new Error(json.error || 'Failed to push policy');
       
       setPolicyFeedback({ text: `Policy v${json.version} pushed successfully`, type: 'success' });
-      setPolicyForm({ agentId: '', policyJson: '' });
+      setPolicyForm({
+        agentId: '',
+        policyJson: '{\n  "customer_support_agent": { "max_usd": 50.0, "allow": true }\n}',
+      });
       fetchSummary();
     } catch (err: unknown) {
       setPolicyFeedback({ text: err instanceof Error ? err.message : String(err), type: 'error' });
@@ -448,6 +465,7 @@ export default function Dashboard() {
 
   const activeAgents = data.stats.active_agents ?? data.mandates.filter(m => m.status === 'active').length;
   const totalAgents = data.mandates.length;
+  const localGovernance = data.governance?.local_governance ?? true;
 
   return (
     <>
@@ -695,10 +713,18 @@ export default function Dashboard() {
                                           </td>
                                         )}
                                         <td>
-                                            <button className="btn btn-danger" onClick={() => revokeMandate(m.id)}>Revoke</button>
-                                            <button className="btn" onClick={() => {
-                                              setFormState({ id: m.id, budget: m.budget_usd.toString(), expiry: '' });
-                                            }}>Top-up</button>
+                                            {localGovernance ? (
+                                              <>
+                                                <button className="btn btn-danger" onClick={() => revokeMandate(m.id)}>Revoke</button>
+                                                <button className="btn" onClick={() => {
+                                                  setFormState({ id: m.id, budget: m.budget_usd.toString(), expiry: '' });
+                                                }}>Top-up</button>
+                                              </>
+                                            ) : (
+                                              <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)'}}>
+                                                via Sign &amp; Push
+                                              </span>
+                                            )}
                                         </td>
                                     </tr>
                                   );
@@ -712,38 +738,28 @@ export default function Dashboard() {
             </div>
             <div className="bento-card col-4">
                 <div className="panel-header">
-                    <h2>Issue Mandate</h2>
+                    <h2>Sign &amp; Push Policy</h2>
+                    <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--mint)'}}>
+                      {data.governance?.authoring_mode === 'central_sign_and_push'
+                        ? 'source of truth'
+                        : data.governance?.control_plane_configured
+                          ? 'central + local opt-in'
+                          : 'local-only agent'}
+                    </span>
                 </div>
-                <form onSubmit={handleUpsert} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
-                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
-                        <label className="kpi-label" htmlFor="form-mandate-id">Agent ID</label>
-                        <input type="text" id="form-mandate-id" required placeholder="e.g. customer_support_agent" className="form-input" value={formState.id} onChange={e => setFormState({...formState, id: e.target.value})} />
-                    </div>
-                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
-                        <label className="kpi-label" htmlFor="form-budget">Budget Limit (USD)</label>
-                        <input type="number" id="form-budget" required step="0.0001" min="0.0001" placeholder="e.g. 50.00" className="form-input" value={formState.budget} onChange={e => setFormState({...formState, budget: e.target.value})} />
-                    </div>
-                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
-                        <label className="kpi-label" htmlFor="form-expiry">Expiry Date (Optional)</label>
-                        <input type="datetime-local" id="form-expiry" className="form-input" value={formState.expiry} onChange={e => setFormState({...formState, expiry: e.target.value})} />
-                    </div>
-                    <button type="submit" className="btn-submit">Apply Mandate</button>
-                    <div className={`feedback-message ${feedback.type}`}>{feedback.text}</div>
-                </form>
-
-                <div className="panel-header" style={{ marginTop: '2rem' }}>
-                    <h2>Push Policy Revision</h2>
-                </div>
+                <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', margin:'0 0 0.75rem'}}>
+                  Author a signed, versioned policy. Agents poll and enforce locally — no control-plane call on allow/block.
+                </p>
                 <form onSubmit={handlePushPolicy} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
                         <label className="kpi-label" htmlFor="policy-agent-id">Agent ID</label>
                         <input type="text" id="policy-agent-id" required placeholder="e.g. customer_support_agent" className="form-input" value={policyForm.agentId} onChange={e => setPolicyForm({...policyForm, agentId: e.target.value})} />
                     </div>
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
-                        <label className="kpi-label" htmlFor="policy-json">Policy JSON (Rego Bundle)</label>
-                        <textarea id="policy-json" required rows={5} placeholder='{"max_usd": 150.0}' className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={policyForm.policyJson} onChange={e => setPolicyForm({...policyForm, policyJson: e.target.value})} />
+                        <label className="kpi-label" htmlFor="policy-json">Mandates JSON</label>
+                        <textarea id="policy-json" required rows={5} placeholder='{"customer_support_agent": {"max_usd": 50.0, "allow": true}}' className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={policyForm.policyJson} onChange={e => setPolicyForm({...policyForm, policyJson: e.target.value})} />
                     </div>
-                    <button type="submit" className="btn-submit" style={{background: 'var(--blue)'}}>Sign & Push vNext</button>
+                    <button type="submit" className="btn-submit" style={{background: 'var(--blue)'}}>Sign &amp; Push vNext</button>
                     <div className={`feedback-message ${policyFeedback.type}`}>{policyFeedback.text}</div>
                 </form>
 
@@ -766,7 +782,7 @@ export default function Dashboard() {
                         <label className="kpi-label" htmlFor="fleet-partitions">Partitions JSON</label>
                         <textarea id="fleet-partitions" required rows={5} className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={fleetForm.partitionsJson} onChange={e => setFleetForm({...fleetForm, partitionsJson: e.target.value})} />
                     </div>
-                    <button type="submit" className="btn-submit" style={{background: 'var(--mint)', color: '#050505'}}>Partition & Push</button>
+                    <button type="submit" className="btn-submit" style={{background: 'var(--mint)', color: '#050505'}}>Partition &amp; Push</button>
                     <div className={`feedback-message ${fleetFeedback.type}`}>{fleetFeedback.text}</div>
                 </form>
 
@@ -803,6 +819,41 @@ export default function Dashboard() {
                     <button type="submit" className="btn-submit" style={{background: 'var(--text-secondary)'}}>Validate Aliases</button>
                     <div className={`feedback-message ${secretFeedback.type}`}>{secretFeedback.text}</div>
                 </form>
+
+                <div className="panel-header" style={{ marginTop: '2rem' }}>
+                    <h2>Local ledger edits</h2>
+                    <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)'}}>
+                      {localGovernance ? 'enabled' : 'gated'}
+                    </span>
+                </div>
+                {!localGovernance ? (
+                  <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--amber)', margin:0}}>
+                    Control plane configured — caps are authored via Sign &amp; Push above.
+                    Set <code>MINTRY_LOCAL_GOVERNANCE=1</code> only for air-gapped / local ledger upserts.
+                  </p>
+                ) : (
+                  <>
+                    <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', margin:'0 0 0.75rem'}}>
+                      Writes directly to this host&apos;s SQLite ledger. Does not create a signed policy version.
+                    </p>
+                    <form onSubmit={handleUpsert} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                            <label className="kpi-label" htmlFor="form-mandate-id">Mandate ID</label>
+                            <input type="text" id="form-mandate-id" required placeholder="e.g. customer_support_agent" className="form-input" value={formState.id} onChange={e => setFormState({...formState, id: e.target.value})} />
+                        </div>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                            <label className="kpi-label" htmlFor="form-budget">Budget Limit (USD)</label>
+                            <input type="number" id="form-budget" required step="0.0001" min="0.0001" placeholder="e.g. 50.00" className="form-input" value={formState.budget} onChange={e => setFormState({...formState, budget: e.target.value})} />
+                        </div>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                            <label className="kpi-label" htmlFor="form-expiry">Expiry Date (Optional)</label>
+                            <input type="datetime-local" id="form-expiry" className="form-input" value={formState.expiry} onChange={e => setFormState({...formState, expiry: e.target.value})} />
+                        </div>
+                        <button type="submit" className="btn-submit">Apply to local ledger</button>
+                        <div className={`feedback-message ${feedback.type}`}>{feedback.text}</div>
+                    </form>
+                  </>
+                )}
             </div>
         </div>
       </div>
