@@ -7,24 +7,33 @@ This roadmap reflects the code currently present in the repository.
 
 ## Repository Status
 
-**Current release: `v1.1.0` (Phase 2 enterprise gate).** See
-[PHASE2_PLAN.md](./PHASE2_PLAN.md), [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md), and
-[CHANGELOG.md](../CHANGELOG.md).
+**Current release: `v1.1.1`** (Phase 2 enterprise gate + promise-alignment tighten).
 
-Implemented:
+See [PHASE2_PLAN.md](./PHASE2_PLAN.md), [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md),
+[RELEASE_NOTES_v1.1.0.md](./RELEASE_NOTES_v1.1.0.md), and [CHANGELOG.md](../CHANGELOG.md).
 
-- sync and async interception with local SQLite WAL ledger
-- multi-provider metering and per-model pricing
-- mandate lifecycle, expiry, audit log, CLI
-- local observability dashboard + admin auth
-- closed control-plane loop: canonical ES256 sign → poll → verify → enforce
-- batched telemetry; last-known-good policy cache
+### Supported product path
+
+| Layer | Status |
+| --- | --- |
+| Python SDK + local SQLite WAL | **Supported** — enforce locally, zero CP I/O on allow/block |
+| Dashboard Sign & Push → Supabase | **Supported** — central authoring source of truth |
+| Fleet Option A / Org compile → flat caps | **Supported** — compiled before the hot path |
+| Go `mintry-proxy` sidecar | **Scaffold** — HTTP metering works; HTTPS MITM TBD |
+| Node SDK (`mintry-node`) | **Prototype** — private `0.1.0` |
+| Legacy `apps/sync-api` | **Demo stub only** — not the control plane |
+
+### Promise alignment (v1.1.1)
+
+- With `MINTRY_CONTROL_PLANE_URL` set, local mandate upsert/revoke requires `MINTRY_LOCAL_GOVERNANCE=1`
+- Dashboard leads with Sign & Push / Fleet / Org; local ledger edits are gated
+- README / SECURITY honestly label supported vs scaffold paths
 
 ## Completed Milestones
 
 ### v0.1.1 – v0.5.0
 
-Prior milestones (interception, async, multi-provider, lifecycle, dashboard) are complete — see git history / CHANGELOG.
+Prior milestones (interception, async, multi-provider, lifecycle, dashboard) — see git history / CHANGELOG.
 
 ### v1.0.0 — Phase 1 production gate (2026-07-28)
 
@@ -35,64 +44,53 @@ Prior milestones (interception, async, multi-provider, lifecycle, dashboard) are
 - [x] TelemetryBatcher from `init()`
 - [x] Idempotent `init()`; DoD test suites
 - [x] Legacy sync-api / Node SDK honesty labels
+- [x] Dashboard credibility (§10): demo mode, KPIs, audit feed, brand palette
+- [x] Closed control-plane loop: sign → poll → verify → enforce; LKG on failure
 
-## Phase 1 — Alpha (Control Plane Upgrade)
+### v1.1.0 — Phase 2 enterprise gate (2026-07-28)
 
-See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
+See [PHASE2_PLAN.md](./PHASE2_PLAN.md).
 
-> **Status (v1.0.0):** Production readiness DoD is met for Phase 1.
-> Sidecar / fleet / org hierarchy remain Phase 2.
+- [x] **E0** Fleet Option A static sub-budget partitioning
+- [x] **E1** Agent-grouped ledger (UI)
+- [x] **E2** Org hierarchy compile → flat agent caps
+- [x] **E3** Go sidecar scaffold (`apps/sidecar` / `mintry-proxy`)
+- [x] **E4** OPA compile-at-sync materialization (no CLI on hot path)
+- [x] **E5** Vault alias-only secret references
 
-### Dashboard credibility (§10)
+### v1.1.1 — Promise alignment (2026-07-28)
 
-- [x] Remove integration-test data from prospect-visible environments (`MINTRY_DEMO_MODE`)
-- [x] Hide Expiry column until meaningful (`has_expiry`)
-- [x] Brand palette color consistency (#050505 / #10B981)
-- [x] Live Audit Feed: ALLOW / BLOCK / SPEND events, above the fold
-- [x] KPI reframe: Protected Spend / Requests Blocked / Overspend Prevented
+- [x] Central Sign & Push default when control plane configured
+- [x] Local ledger mutations opt-in (`MINTRY_LOCAL_GOVERNANCE`)
+- [x] Dashboard authoring UX reordered; docs honesty pass
 
-### Policy plane
+## Next (post–Phase 2)
 
-- [x] Polling policy sync (15–30s), version number, atomic swap
-- [x] Local last-known-good policy cache (disk LKG re-verified when key configured)
-- [x] Signature verification on policy payloads before apply (canonical ES256)
-- [x] Interceptor enforces verified PolicyCache caps (closed loop)
-- [x] Rollback semantics: ledger independent of policy version
-- [x] Agent-grouped ledger view (UI layer) — deferred polish
+Ordered by leverage for the stated promise ("init once / author centrally / enforce locally / any language"):
 
-### Control plane infrastructure
+1. **Sidecar HTTPS MITM** — inspect/meter TLS LLM traffic through `HTTP(S)_PROXY` without uninspected tunnels
+2. **Sidecar policy poller** — same verify → LKG → flat-cap loop as the Python SDK (today Python syncs; sidecar reads ledger)
+3. **Full Supabase Auth UI** — replace shared admin token for multi-user dashboard access
+4. **Configurable intent blocklists** — move built-in phrases into signed policy (still deterministic allow/block)
+5. **Option B fleet hard cap** — Redis/Upstash atomic counter only if Option A partitions prove insufficient
 
-- [x] Vercel + Supabase (skip Turso in Phase 1)
-- [x] Dashboard / admin authentication (admin token + login cookie; full Supabase Auth UI optional)
-- [x] Batched telemetry POST from SDK to control plane
-- [x] Canonical ES256 sign/verify + shared env names
-- [x] Quarantine legacy `apps/sync-api`; honest `mintry-node` maturity label
+## Explicitly Deferred
 
-## Phase 2 — Enterprise
-
-See [PHASE2_PLAN.md](./PHASE2_PLAN.md). **Gate complete (E0–E5).**
-
-- [x] Fleet budget: Option A static sub-budget partitioning (E0)
-- [x] Agent-grouped ledger view (UI layer) (E1)
-- [x] Go sidecar scaffold — `apps/sidecar` / `mintry-proxy` (E3; HTTPS MITM follow-up)
-- [x] Full Agent-as-primary data model + org/project hierarchy (E2)
-- [x] OPA bundle evaluation for policy distribution/signing (E4 — compile-at-sync)
-- [x] Secrets orchestration via customer Vault (alias-only) (E5)
-
-## Explicitly Deferred (§8)
+From [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) §8 — do not pull onto the hot path:
 
 - Automatic model rerouting
-- Anomaly/recommendation engine
+- Anomaly / recommendation engine (analytics layer only)
 - Push-based policy propagation (until enterprise SLA requires it)
 
 ## Ideas Under Consideration
 
-- shared ledger mode beyond a single local SQLite file
+- Shared ledger mode beyond a single local SQLite file (per-pod emptyDir + Option A remains preferred)
 - VS Code spend visibility
-- automated Stripe-triggered top-ups
-- configurable intent blocklists instead of the current built-in phrases
+- Automated Stripe-triggered top-ups (control plane only; never on authorize)
+- Publishable Node SDK subset once it matches Python’s closed enforce loop
 
 ## Notes
 
-- Documentation in this folder is written against the current code in `src/mintry`.
-- Phase 2 items are intentionally out of the `1.0.0` gate.
+- Docs in this folder track code under `src/mintry`, `apps/dashboard`, and `apps/sidecar`.
+- Phase 1 = `1.0.0`. Phase 2 = `1.1.0`. Promise tighten = `1.1.1`.
+- Next work must preserve: no network on authorize; fail to last-known-good; deterministic allow / block / configured number.
