@@ -8,11 +8,14 @@ Mintry Fabric utilizes a decoupled architecture separating the control and enfor
 
 | Component | What it Runs | Where it Lives | Cost to You |
 | --------- | ------------ | -------------- | ----------- |
-| **Frontend** | Next.js Marketing & Dashboard | Vercel | $0 (Free Tier) |
-| **Control Plane** | Central Sync API & Sync Database | Render | $0 to $5/mo |
-| **Enforcement Plane** | Core Logic Fabric + Local SQLite Ledger | Customer's Infrastructure | $0 (Paid by client) |
+| **Frontend** | Next.js Dashboard | Vercel | $0 (Free Tier) |
+| **Control Plane** | Supabase (`policy_bundles` + telemetry) | Supabase | Free tier → usage |
+| **Enforcement Plane** | Python SDK + Local SQLite Ledger | Customer's Infrastructure | $0 (Paid by client) |
 
-The **Enforcement Plane** is what gets deployed to the client's infrastructure. It writes to a local SQLite ledger (`vouchers.db`) for zero-latency budget authorization. The **Control Plane** handles asynchronous syncing back to central servers.
+> **Note:** `apps/sync-api` is a **legacy demo stub**, not the production control plane.
+> See `apps/sync-api/README.md` and `docs/ARCHITECTURE.md`.
+
+The **Enforcement Plane** is what gets deployed to the client's infrastructure. It writes to a local SQLite ledger (`vouchers.db`) for zero-latency budget authorization. The **Control Plane** authors signed policy versions asynchronously; the SDK polls and enforces last-known-good locally.
 
 ## 1. Local Native Development
 
@@ -74,17 +77,18 @@ For Kubernetes, the recommended pattern is the **Sidecar Proxy**. Rather than ru
 ## 4. Production Security
 
 - **Webhooks**: Always set `MINTRY_WEBHOOK_URL` in production to alert your observability stack when mandates are exhausted or intents are blocked.
-- **Dashboard Access**: The Mintry dashboard currently does not feature built-in authentication. In production, place it behind an API Gateway or reverse proxy (like Nginx or Caddy) with Basic Auth or OIDC enabled.
+- **Dashboard Access**: Set `MINTRY_DASHBOARD_ADMIN_TOKEN` and require login via `POST /api/login` (or Bearer). Set `MINTRY_DASHBOARD_API_TOKEN` for Next→Python mutations. Prefer also placing the UI behind SSO / Basic Auth at the edge.
+- **Policy signatures**: Configure `MINTRY_POLICY_PRIVATE_KEY` / `MINTRY_POLICY_PUBLIC_KEY`. Do not enable `MINTRY_ALLOW_MOCK_SIGNATURES` in production.
 - **JSON Logs**: Set `MINTRY_JSON_LOGS=1` so your log aggregators (Datadog, Splunk, Grafana Loki) can parse the `event: spend_metered` telemetry out of the box.
 
 ## 5. Live Production Smoke Test
 
-After deploying the control plane to Render and the dashboard to Vercel, you can verify the full data path from your terminal by writing a temporary test mandate into the live sync API and checking that it appears on the production dashboard.
+Prefer exercising the **Supabase + Python SDK** path (sign a policy bundle, confirm the agent poll applies it). The legacy Render sync-api endpoints below are demo-only and must not be treated as the control plane of record.
 
-### Current Production Endpoints
+### Current endpoints (example)
 
 - **Dashboard**: `https://mintry-fabric-dashboard.vercel.app`
-- **Sync API**: `https://mintry-sync-api.onrender.com`
+- **Legacy sync-api (demo only)**: `https://mintry-sync-api.onrender.com`
 
 ### 1. Create a Test Mandate
 

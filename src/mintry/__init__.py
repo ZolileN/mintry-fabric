@@ -15,12 +15,14 @@ from mintry.core.policy_sync import PolicyCache, PolicySyncWorker
 from mintry.core.control_plane import SupabaseControlPlaneClient
 from mintry.core.crypto import verify_policy_bundle_signature
 from mintry.core.exceptions import MintryMandateExceeded
+from mintry.core.telemetry_batch import TelemetryBatcher
 from mintry import telemetry as _telemetry
 
-__version__ = "1.0.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "init",
+    "close",
     "mandate",
     "MintryMandateExceeded",
     "PolicyEngine",
@@ -66,21 +68,19 @@ def init(
     engine.api_key = resolved_key
     interceptor = GlobalHTTPInterceptor(engine)
 
-    # Initialize policy sync worker (Principle 3: Enforce locally, always)
-    # This polls for new policies from the control plane in the background
-    policy_cache = PolicyCache(wallet=wallet)
-    
-    # Create control plane client for fetching policies
-    control_plane = SupabaseControlPlaneClient(
-        control_plane_url=control_plane_url,
-        api_key=control_plane_key,
+    # Prefer explicit arg, then documented env var
+    resolved_public_key = (
+        control_plane_public_key
+        or os.environ.get("MINTRY_POLICY_PUBLIC_KEY")
     )
+    control_plane_url = control_plane_url or os.environ.get("MINTRY_CONTROL_PLANE_URL")
+    control_plane_key = control_plane_key or os.environ.get("MINTRY_CONTROL_PLANE_KEY")
 
     # Create signature verification function (Principle 5: Fail to last-known-good)
     def verify_bundle(bundle):
         """Verify ES256 signature on policy bundle."""
-        if not control_plane_public_key:
-            return True  # Skip verification if no key configured
+        if not resolved_public_key:
+            return True  # Skip verification if no key configured (local/dev)
         try:
             return verify_policy_bundle_signature(
                 {
@@ -90,12 +90,24 @@ def init(
                     "issued_at": bundle.issued_at,
                     "issued_by": bundle.issued_by,
                 },
-                control_plane_public_key,
+                resolved_public_key,
             )
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("Policy signature verification failed: %s", exc)
             return False
+
+    verify_fn = verify_bundle if resolved_public_key else None
+
+    # Initialize policy sync worker (Principle 3: Enforce locally, always)
+    # This polls for new policies from the control plane in the background
+    policy_cache = PolicyCache(wallet=wallet, verify_fn=verify_fn)
+
+    # Create control plane client for fetching policies
+    control_plane = SupabaseControlPlaneClient(
+        control_plane_url=control_plane_url,
+        api_key=control_plane_key,
+    )
 
     # Agent ID — primary object identifier per §9.1
     # Each deployment should set MINTRY_AGENT_ID to uniquely identify this agent
@@ -108,7 +120,7 @@ def init(
         policy_cache,
         fetch_fn=lambda: control_plane.fetch_policy_bundle(agent_id),
         interval_sec=policy_sync_interval,
-        verify_fn=verify_bundle if control_plane_public_key else None,
+        verify_fn=verify_fn,
     )
 
     # Start the background policy sync if control plane is configured
@@ -121,8 +133,19 @@ def init(
     engine.control_plane = control_plane
     engine.agent_id = agent_id  # expose for dashboard and telemetry
 
-    # Inject policy cache into wallet for OPA hot-path evaluation
+    # Inject policy cache into wallet for OPA / policy lookups
     wallet.policy_cache = policy_cache
+
+    # Async telemetry to control plane (never on the enforcement hot path)
+    telemetry_batcher = None
+    if (
+        control_plane.url
+        and control_plane.api_key
+        and os.environ.get("MINTRY_TELEMETRY_DISABLED", "").lower() not in ("1", "true", "yes")
+    ):
+        telemetry_batcher = TelemetryBatcher(wallet, control_plane)
+        telemetry_batcher.start()
+    engine.telemetry_batcher = telemetry_batcher
 
     # Install the global hooks
     interceptor.install()
@@ -135,6 +158,23 @@ def init(
 
     _global_engine = engine
     return engine
+
+
+def close() -> None:
+    """Flush wallet writes and stop background workers for the global engine."""
+    global _global_engine
+    if _global_engine is None:
+        return
+    batcher = getattr(_global_engine, "telemetry_batcher", None)
+    if batcher is not None:
+        batcher.stop()
+    worker = getattr(_global_engine, "policy_sync_worker", None)
+    if worker is not None:
+        worker.stop()
+    wallet = getattr(_global_engine, "wallet", None)
+    if wallet is not None and hasattr(wallet, "close"):
+        wallet.close()
+    _global_engine = None
 
 
 def mandate(task: str, cap: float):

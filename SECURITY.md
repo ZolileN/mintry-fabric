@@ -4,10 +4,9 @@
 
 | Version | Supported |
 |---|---|
+| `0.6.x` | Active development (control-plane enforce loop) |
+| `0.5.x` | Prior feature snapshot |
 | `main` / current repository state | Active development |
-| `0.5.x` | Current release |
-| `0.1.x` | Initial baseline release |
-| older than `0.1.0` | Not supported |
 
 ## Reporting a Vulnerability
 
@@ -24,14 +23,14 @@ Email the engineering lead with:
 
 ### API keys
 
-- `api_key` is required by `mintry.init()`
-- the library does not auto-read `MINTRY_API_KEY`; applications must pass it explicitly
+- `mintry.init()` requires `api_key=` or the `MINTRY_API_KEY` environment variable
+- Dashboard mutations should use `MINTRY_DASHBOARD_ADMIN_TOKEN` / `MINTRY_DASHBOARD_API_TOKEN`
 
-### Signed mandates
+### Signed policies
 
-- `AP2IntentMandate` supports ES256 verification helpers
-- malformed signatures raise errors
-- invalid signatures return `False`
+- Policy bundles use ES256 (canonical JSON) — see `mintry.core.crypto` and `apps/dashboard/src/lib/policy-crypto.ts`
+- Configure `MINTRY_POLICY_PUBLIC_KEY` on agents and `MINTRY_POLICY_PRIVATE_KEY` on the signer
+- Invalid/unsigned payloads are rejected when a public key is configured; last-known-good remains in force
 
 ### Intent blocking
 
@@ -49,12 +48,12 @@ The interceptor blocks request prompts containing:
 
 ## Current Security Limitations
 
-- the intent blocklist is hardcoded rather than policy-driven
-- the dashboard is a local operational tool and does not provide authentication or multi-user authorization
+- the intent blocklist is still largely built-in (policy-driven allow/deny flags are supported on central mandates)
+- multi-user org RBAC is Phase 2; Phase 1 uses a shared admin token / login cookie
 - the interceptor is a global monkey-patch, so applications must understand that enforcement is process-wide
-- the repo does not yet ship a hardened deployment model for multi-host shared-ledger usage
+- multi-host shared-ledger usage still requires the sidecar roadmap
 
 ## Architectural Security
 
-Our security model is strictly bound by the [Six Architecture Principles](docs/ARCHITECTURE.md). 
+Our security model is strictly bound by the [Six Architecture Principles](docs/ARCHITECTURE.md).
 In particular, the principles of **Enforce locally, always** and **Fail to last-known-good, never open** are critical security features. The logic fabric must never bypass enforcement if the central control plane is offline, and all architectural decisions must preserve this deterministic, localized zero-trust model.

@@ -46,49 +46,94 @@ class PolicyEngine:
 
     def authorize(self, mandate_id: str, request, deduct: bool = True):
         """
-        Performs a three-phase budget check for an outbound request.
+        Performs a local budget check for an outbound request.
 
-        Phase 1 — Expiry check: rejects expired mandates.
-        Phase 2 — Safety threshold: ensures at least $0.01 headroom.
-        Phase 3 — Base fee deduction (if deduct=True).
-
-        Returns True if authorized, False if budget is exhausted or mandate expired.
+        Uses verified PolicyCache caps when present (central governance),
+        otherwise falls back to the local wallet mandate row. Spend always
+        comes from the local ledger. Never performs network I/O.
         """
-        # Phase 1: Expiry check
-        if self.wallet.is_expired(mandate_id):
-            mandate = self.wallet.get_mandate(mandate_id)
+        mandate = self.wallet.get_mandate(mandate_id)
+        spent = float(mandate.get("spent_usd", 0.0) or 0.0)
+        budget = float(mandate.get("budget_usd", 0.0) or 0.0)
+        status = mandate.get("status", "unknown")
+        policy_expires_at = None
+        policy_explicit_deny = False
+
+        # Prefer centrally authored caps from the last verified local policy.
+        cache = getattr(self, "policy_cache", None)
+        rule = None
+        if cache is not None and hasattr(cache, "mandate_rule"):
+            rule = cache.mandate_rule(mandate_id)
+        elif cache is not None and hasattr(cache, "get_active_policy"):
+            bundle = cache.get_active_policy()
+            if bundle and isinstance(getattr(bundle, "mandates", None), dict):
+                candidate = bundle.mandates.get(mandate_id)
+                if isinstance(candidate, dict):
+                    rule = candidate
+
+        if rule is not None:
+            if rule.get("allow") is False:
+                policy_explicit_deny = True
+            if "max_usd" in rule:
+                budget = float(rule["max_usd"])
+            policy_expires_at = rule.get("expires_at")
+
+        # Phase 1: Expiry check (wallet expiry and/or policy expiry)
+        expired = self.wallet.is_expired(mandate_id)
+        if not expired and policy_expires_at:
+            try:
+                expires = datetime.fromisoformat(str(policy_expires_at).replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                expired = now >= expires
+            except (TypeError, ValueError):
+                expired = False
+
+        if expired:
             self.wallet.log_decision(
                 mandate_id, "block", 0.0,
-                f"Mandate expired — request rejected"
+                "Mandate expired — request rejected"
             )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "expired",
                 "mandate_id": mandate_id,
-                "budget_usd": mandate.get("budget_usd", 0.0),
-                "spent_usd": mandate.get("spent_usd", 0.0),
+                "budget_usd": budget,
+                "spent_usd": spent,
+            })
+            return False
+
+        if policy_explicit_deny:
+            self.wallet.log_decision(
+                mandate_id, "block", 0.0,
+                "Blocked by central policy (allow=false)"
+            )
+            self._dispatch_webhook({
+                "event": "authorization_failed",
+                "reason": "policy_deny",
+                "mandate_id": mandate_id,
+                "budget_usd": budget,
+                "spent_usd": spent,
             })
             return False
 
         # Phase 2: Budget check
-        mandate = self.wallet.get_mandate(mandate_id)
-
-        # Reject exhausted mandates
-        if mandate.get("status") == "exhausted":
+        if status == "exhausted":
             self.wallet.log_decision(
                 mandate_id, "block", 0.0,
-                f"Budget exhausted (${mandate.get('spent_usd', 0):.4f} / ${mandate.get('budget_usd', 0):.4f})"
+                f"Budget exhausted (${spent:.4f} / ${budget:.4f})"
             )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "budget_exhausted",
                 "mandate_id": mandate_id,
-                "budget_usd": mandate.get("budget_usd", 0.0),
-                "spent_usd": mandate.get("spent_usd", 0.0),
+                "budget_usd": budget,
+                "spent_usd": spent,
             })
             return False
 
-        remaining = mandate['budget_usd'] - mandate['spent_usd']
+        remaining = budget - spent
         if remaining < 0.01:
             self.wallet.log_decision(
                 mandate_id, "block", round(remaining, 4),
@@ -98,8 +143,23 @@ class PolicyEngine:
                 "event": "authorization_failed",
                 "reason": "budget_exhausted",
                 "mandate_id": mandate_id,
-                "budget_usd": mandate.get("budget_usd", 0.0),
-                "spent_usd": mandate.get("spent_usd", 0.0),
+                "budget_usd": budget,
+                "spent_usd": spent,
+            })
+            return False
+
+        # Reserve default headroom so concurrent requests cannot all pass.
+        if not self.wallet.try_reserve(mandate_id, 0.01, budget):
+            self.wallet.log_decision(
+                mandate_id, "block", 0.0,
+                "Insufficient headroom (concurrent reservation)"
+            )
+            self._dispatch_webhook({
+                "event": "authorization_failed",
+                "reason": "budget_exhausted",
+                "mandate_id": mandate_id,
+                "budget_usd": budget,
+                "spent_usd": spent,
             })
             return False
 
@@ -112,12 +172,19 @@ class PolicyEngine:
     def get_budget_summary(self, mandate_id: str) -> dict:
         """Returns a budget summary with remaining headroom for error messages."""
         mandate = self.wallet.get_mandate(mandate_id)
-        remaining = mandate['budget_usd'] - mandate['spent_usd']
+        budget = float(mandate.get("budget_usd", 0.0) or 0.0)
+        spent = float(mandate.get("spent_usd", 0.0) or 0.0)
+        cache = getattr(self, "policy_cache", None)
+        if cache is not None and hasattr(cache, "mandate_rule"):
+            rule = cache.mandate_rule(mandate_id)
+            if rule and "max_usd" in rule:
+                budget = float(rule["max_usd"])
+        remaining = budget - spent
         is_expired = self.wallet.is_expired(mandate_id)
         return {
             "mandate_id": mandate_id,
-            "budget_usd": mandate['budget_usd'],
-            "spent_usd": mandate['spent_usd'],
+            "budget_usd": budget,
+            "spent_usd": spent,
             "remaining_usd": round(remaining, 6),
             "status": mandate.get("status", "unknown"),
             "expired": is_expired,

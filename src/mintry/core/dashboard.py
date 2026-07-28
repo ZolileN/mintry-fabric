@@ -63,22 +63,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
     dashboard_ui_origin: ClassVar[str] = "http://127.0.0.1:3000"
     policy_cache: ClassVar[Optional[object]] = None  # PolicyCache instance
     control_plane: ClassVar[Optional[object]] = None  # SupabaseControlPlaneClient instance
+    _health_cache: ClassVar[dict] = {"checked_at": 0.0, "healthy": False}
 
     def log_message(self, format, *args):
         # Override to suppress standard HTTP logging to keep console clean
         pass
 
+    def _cors_origin(self) -> str:
+        configured = os.getenv("MINTRY_DASHBOARD_UI_ORIGIN") or self.dashboard_ui_origin
+        return configured
+
+    def _send_cors_headers(self):
+        origin = self._cors_origin()
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
     def send_json_response(self, data, status_code=200):
         response_bytes = json.dumps(data).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.send_header("Content-Length", str(len(response_bytes)))
         try:
             self.end_headers()
             self.wfile.write(response_bytes)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _authorized(self) -> bool:
+        """Require Bearer token when MINTRY_DASHBOARD_API_TOKEN is configured."""
+        expected = os.environ.get("MINTRY_DASHBOARD_API_TOKEN", "").strip()
+        if not expected:
+            # Local/dev default: open when no token configured
+            return True
+        auth = self.headers.get("Authorization", "")
+        if not auth.lower().startswith("bearer "):
+            return False
+        token = auth[7:].strip()
+        return token == expected
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._send_cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def handle(self):
         try:
@@ -154,8 +184,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.handle_proxy("POST")
             return
 
+        if not self._authorized():
+            self.send_json_response({"error": "Unauthorized"}, 401)
+            return
+
         if not self.db_path:
             self.send_error(500, "Database path not configured.")
+            return
+
+        # Production: prefer central Sign & Push; local mutations need explicit opt-in.
+        local_gov = os.environ.get("MINTRY_LOCAL_GOVERNANCE", "").lower() in ("1", "true", "yes")
+        require_local = os.environ.get("MINTRY_REQUIRE_LOCAL_GOVERNANCE_FLAG", "").lower() in (
+            "1", "true", "yes",
+        )
+        if require_local and not local_gov and self.path.startswith("/api/mandates/"):
+            self.send_json_response(
+                {
+                    "error": "Local mandate mutations disabled. "
+                    "Sign & Push a policy version, or set MINTRY_LOCAL_GOVERNANCE=1."
+                },
+                403,
+            )
             return
 
         content_length = int(self.headers.get('Content-Length', 0))
@@ -309,7 +358,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "top_mandates": top_mandates,
                 "mandates": mandates,
                 "history": history,
-                "has_expiry": False,
+                "has_expiry": has_expiry,
                 "policy_sync": self._get_policy_sync_status(),
             }
         finally:
@@ -318,6 +367,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     @classmethod
     def _get_policy_sync_status(cls) -> dict:
         """Get policy sync status from the policy cache (Principle 4: visible staleness)."""
+        import time
+
         if not cls.policy_cache:
             return {
                 "policy_version": None,
@@ -327,13 +378,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }
 
         sync_status = cls.policy_cache.get_sync_status()
-        control_plane_healthy = cls.control_plane.health_check() if cls.control_plane else False
+        now = time.time()
+        cache = cls._health_cache
+        if now - float(cache.get("checked_at", 0.0)) > 30.0:
+            healthy = cls.control_plane.health_check() if cls.control_plane else False
+            cache["checked_at"] = now
+            cache["healthy"] = healthy
 
         return {
             "policy_version": sync_status.get("policy_version"),
             "last_synced_at": sync_status.get("last_synced_at"),
             "last_sync_error": sync_status.get("last_sync_error"),
-            "control_plane_healthy": control_plane_healthy,
+            "control_plane_healthy": bool(cache.get("healthy", False)),
         }
 
 def start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):

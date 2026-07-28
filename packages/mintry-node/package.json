@@ -1,12 +1,14 @@
 {
   "name": "mintry-node",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Experimental Node enforcement SDK prototype — Python SDK is the supported path",
+  "main": "src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx tsx --test tests/sdk.test.ts",
+    "typecheck": "npx tsc --noEmit"
   },
-  "keywords": [],
+  "keywords": ["mintry", "experimental"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",

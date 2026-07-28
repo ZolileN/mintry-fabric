@@ -19,6 +19,7 @@ def test_real_time_metering(httpx_mock, tmp_path):
     fabric = mintry.init(api_key="test_key_2026", db_path=db)
     client = OpenAI(api_key="sk-mock-key")
     mandate_id = "mt_task_882x"
+    fabric.wallet.create_mandate(mandate_id, 1.00)
 
     # 1. Capture initial spend
     initial_spent = fabric.wallet.get_spent(mandate_id)
@@ -48,7 +49,8 @@ def test_real_time_metering(httpx_mock, tmp_path):
     print(f"\n--- Phase 1: Executing Metered Request ---")
     client.chat.completions.create(
         model="gpt-5-preview",
-        messages=[{"role": "user", "content": "Generate 1000 tokens of text."}]
+        messages=[{"role": "user", "content": "Generate 1000 tokens of text."}],
+        extra_headers={"X-Mintry-Mandate": mandate_id},
     )
 
     # Flush the async metering queue so spend is committed to the wallet cache

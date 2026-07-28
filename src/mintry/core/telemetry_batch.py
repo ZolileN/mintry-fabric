@@ -76,7 +76,7 @@ class TelemetryBatcher:
         """Stop the background thread and flush pending events."""
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=2)
 
     def record_decision(
         self,
@@ -111,16 +111,14 @@ class TelemetryBatcher:
 
         while not self._stop.is_set():
             try:
-                # Wait for either a batch to fill or the interval to elapse
-                timeout = max(0.1, self._batch_interval_sec - (time.time() - self._last_upload_at))
-
+                # Short waits so stop() can join quickly
                 try:
-                    event = self._queue.get(timeout=timeout)
+                    event = self._queue.get(timeout=0.1)
                     batch.append(event)
+                    self._queue.task_done()
                 except queue.Empty:
                     pass
 
-                # Upload if batch is full or interval elapsed
                 should_upload = (
                     len(batch) >= self._batch_size
                     or (time.time() - self._last_upload_at) >= self._batch_interval_sec

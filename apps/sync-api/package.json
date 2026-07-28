@@ -1,15 +1,17 @@
 {
   "name": "sync-api",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.0.1",
+  "private": true,
+  "description": "LEGACY demo stub — not the production control plane",
   "main": "index.js",
   "scripts": {
     "build": "npx tsc",
     "dev": "npx ts-node src/index.ts",
     "start": "node dist/index.js",
+    "demo:start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": ["legacy", "demo"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",

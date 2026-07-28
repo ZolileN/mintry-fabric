@@ -220,6 +220,9 @@ class GlobalHTTPInterceptor:
             span_cm = tracer.start_as_current_span("mintry.proxy.request")
             span = span_cm.__enter__()
             _t0 = time.perf_counter()
+            mandate_id = None
+            reserved = False
+            metered = False
 
             try:
                 if span.is_recording():
@@ -234,6 +237,7 @@ class GlobalHTTPInterceptor:
                     # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
                     if not engine.authorize(mandate_id, request, deduct=False):
                         interceptor._raise_budget_error(engine, mandate_id)
+                    reserved = True
 
                     # 2. PRE-FLIGHT — Intent Check
                     interceptor._check_intent(request)
@@ -254,8 +258,17 @@ class GlobalHTTPInterceptor:
                     }
                     _enqueue_metering(engine, request_info, content)
                     response._content = content
+                    metered = True
+                elif reserved and is_llm:
+                    engine.wallet.release_reservation(mandate_id, 0.01)
+                    reserved = False
 
                 return response
+
+            except Exception:
+                if reserved and not metered and mandate_id is not None:
+                    engine.wallet.release_reservation(mandate_id, 0.01)
+                raise
 
             finally:
                 # ── OTel: end span post-flight (response bytes flushed) ──
@@ -275,6 +288,9 @@ class GlobalHTTPInterceptor:
             span_cm = tracer.start_as_current_span("mintry.proxy.request")
             span = span_cm.__enter__()
             _t0 = time.perf_counter()
+            mandate_id = None
+            reserved = False
+            metered = False
 
             try:
                 if span.is_recording():
@@ -289,6 +305,7 @@ class GlobalHTTPInterceptor:
                     # 1. PRE-FLIGHT — Fiscal Check (no deduction yet)
                     if not engine.authorize(mandate_id, request, deduct=False):
                         interceptor._raise_budget_error(engine, mandate_id)
+                    reserved = True
 
                     # 2. PRE-FLIGHT — Intent Check
                     interceptor._check_intent(request)
@@ -309,8 +326,17 @@ class GlobalHTTPInterceptor:
                     }
                     _enqueue_metering(engine, request_info, content)
                     response._content = content
+                    metered = True
+                elif reserved and is_llm:
+                    engine.wallet.release_reservation(mandate_id, 0.01)
+                    reserved = False
 
                 return response
+
+            except Exception:
+                if reserved and not metered and mandate_id is not None:
+                    engine.wallet.release_reservation(mandate_id, 0.01)
+                raise
 
             finally:
                 # ── OTel: end span post-flight (response bytes flushed) ──

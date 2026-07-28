@@ -63,17 +63,28 @@ class PolicyCache:
         self,
         cache_dir: Path | str = DEFAULT_CACHE_DIR,
         wallet: Optional[MintryWallet] = None,
+        *,
+        verify_fn: Optional[Callable[["PolicyBundle"], bool]] = None,
     ):
         self._cache_dir = Path(cache_dir).expanduser()
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._state = PolicyCacheState()
         self._wallet = wallet
+        self._verify_fn = verify_fn
         self._load_from_disk()
 
     @property
     def cache_file(self) -> Path:
         return self._cache_dir / "last_known_good.json"
+
+    def mandate_rule(self, mandate_id: str) -> Optional[dict[str, Any]]:
+        """Return the flat policy rule for a mandate from the active bundle."""
+        bundle = self.get_active_policy()
+        if not bundle or not isinstance(bundle.mandates, dict):
+            return None
+        rule = bundle.mandates.get(mandate_id)
+        return rule if isinstance(rule, dict) else None
 
     def _load_from_disk(self) -> None:
         if not self.cache_file.exists():
@@ -81,6 +92,16 @@ class PolicyCache:
         try:
             raw = json.loads(self.cache_file.read_text())
             bundle = PolicyBundle.from_dict(raw["bundle"])
+            if self._verify_fn and not self._verify_fn(bundle):
+                logger.warning(
+                    "Discarding disk policy cache v%s — signature verification failed",
+                    bundle.version,
+                )
+                try:
+                    self.cache_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return
             synced = datetime.fromisoformat(raw["last_synced_at"])
             with self._lock:
                 self._state = PolicyCacheState(bundle=bundle, last_synced_at=synced)

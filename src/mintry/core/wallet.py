@@ -37,9 +37,12 @@ class MintryWallet:
         self._max_cache = {}      # mandate_id -> max_usd (float)
         self._status_cache = {}   # mandate_id -> status (str)
         self._expires_cache = {}  # mandate_id -> expires_at (datetime)
+        self._reserved_cache = {}  # mandate_id -> reserved_usd (float)
+        self._writer_failed = False
 
         # Queue for asynchronous persistence
         self._write_queue = queue.Queue()
+        self._stop_writer = threading.Event()
 
         # Initialize the database schema using a temporary connection
         conn = sqlite3.connect(self.path, isolation_level=None)
@@ -208,7 +211,7 @@ class MintryWallet:
                                 )
                                 conn.execute(
                                     "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
-                                    (mandate_id, "exhaust", 0.0, "Mandate revoked (budget reduced to match spend)")
+                                    (mandate_id, "exhaust", 0.0, "Mandate exhausted / revoked (budget reduced to match spend)")
                                 )
                             elif action == "expire_mandate":
                                 mandate_id, expires_str = args
@@ -235,13 +238,20 @@ class MintryWallet:
                                 )
                 except Exception as e:
                     print(f"[BG_WRITER_ERROR] {e}")
+                    self._writer_failed = True
+                    # Re-queue failed batch so flush()/retry can recover
+                    for item in batch:
+                        self._write_queue.put(item)
                 finally:
                     # Always mark tasks as done to prevent queue.join() deadlocks
                     for _ in range(len(batch)):
                         self._write_queue.task_done()
 
             except queue.Empty:
+                if self._stop_writer.is_set() and self._write_queue.empty():
+                    break
                 continue
+        conn.close()
 
     def get_audit_log(self, mandate_id: str) -> list[dict]:
         """Fetch full append-only transaction history for a mandate directly from DB."""
@@ -340,14 +350,40 @@ class MintryWallet:
         return {"budget_usd": 0.0, "spent_usd": 0.0, "status": "unknown", "expires_at": None}
 
     def record_usage(self, mandate_id, actual_cost):
-        """Adjusts the spent_usd in cache and queues the DB update."""
-        with self._cache_lock:
-            if mandate_id in self._spent_cache:
-                self._spent_cache[mandate_id] += float(actual_cost)
-            else:
-                self._spent_cache[mandate_id] = float(actual_cost)
+        """Adjusts the spent_usd in cache and queues the DB update.
 
-        self._write_queue.put(("record_usage", (mandate_id, float(actual_cost))))
+        Settles any pre-flight reservation for this mandate (default $0.01).
+        """
+        cost = float(actual_cost)
+        with self._cache_lock:
+            reserved = float(self._reserved_cache.get(mandate_id, 0.0) or 0.0)
+            release = min(reserved, 0.01)
+            self._reserved_cache[mandate_id] = max(0.0, reserved - release)
+            if mandate_id in self._spent_cache:
+                self._spent_cache[mandate_id] += cost
+            else:
+                self._spent_cache[mandate_id] = cost
+
+        self._write_queue.put(("record_usage", (mandate_id, cost)))
+
+    def try_reserve(self, mandate_id: str, amount: float, budget_usd: float) -> bool:
+        """Atomically reserve headroom against spent+reserved for concurrent safety."""
+        amount = float(amount)
+        budget_usd = float(budget_usd)
+        with self._cache_lock:
+            spent = float(self._spent_cache.get(mandate_id, 0.0) or 0.0)
+            reserved = float(self._reserved_cache.get(mandate_id, 0.0) or 0.0)
+            if spent + reserved + amount > budget_usd + 1e-9:
+                return False
+            self._reserved_cache[mandate_id] = reserved + amount
+            return True
+
+    def release_reservation(self, mandate_id: str, amount: float = 0.01) -> None:
+        """Release unused pre-flight reservation (e.g. upstream failure)."""
+        amount = float(amount)
+        with self._cache_lock:
+            reserved = float(self._reserved_cache.get(mandate_id, 0.0) or 0.0)
+            self._reserved_cache[mandate_id] = max(0.0, reserved - amount)
 
     def log_decision(self, mandate_id: str, action: str, amount: float = 0.0, details: str = ""):
         """Append an enforcement decision (allow/block/throttle) to the audit log."""
@@ -365,6 +401,7 @@ class MintryWallet:
             self._spent_cache[mandate_id] = 0.0
             self._status_cache[mandate_id] = "active"
             self._expires_cache[mandate_id] = expires_at
+            self._reserved_cache[mandate_id] = 0.0
 
         self._write_queue.put(("create_mandate", (mandate_id, float(max_usd), expires_at)))
 
@@ -431,3 +468,10 @@ class MintryWallet:
     def flush(self):
         """Block until all pending database writes are completed."""
         self._write_queue.join()
+
+    def close(self):
+        """Flush pending writes and stop the background writer."""
+        self.flush()
+        self._stop_writer.set()
+        if getattr(self, "_bg_thread", None):
+            self._bg_thread.join(timeout=5)

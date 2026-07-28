@@ -8,9 +8,21 @@ function buildApiUrl(path: string): string {
   return new URL(path, getApiOrigin()).toString();
 }
 
+function upstreamAuthHeaders(
+  extra?: Record<string, string>
+): Record<string, string> {
+  const headers: Record<string, string> = { ...(extra || {}) };
+  const token = process.env.MINTRY_DASHBOARD_API_TOKEN;
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export async function proxyMintryGet(path: string): Promise<Response> {
   const upstream = await fetch(buildApiUrl(path), {
     cache: "no-store",
+    headers: upstreamAuthHeaders(),
   });
 
   const body = await upstream.text();
@@ -31,9 +43,9 @@ export async function proxyMintryPost(
   const payload = await request.text();
   const upstream = await fetch(buildApiUrl(path), {
     method: "POST",
-    headers: {
+    headers: upstreamAuthHeaders({
       "content-type": request.headers.get("content-type") || "application/json",
-    },
+    }),
     body: payload,
     cache: "no-store",
   });

@@ -98,7 +98,7 @@ export default function Dashboard() {
       .then(json => setData(json))
       .catch(err => console.error("Dashboard API sync failed:", err));
 
-    const interval = setInterval(fetchSummary, 3000);
+    const interval = setInterval(fetchSummary, 5000);
     return () => clearInterval(interval);
   }, [fetchSummary]);
 

@@ -30,7 +30,7 @@ async def test_async_interception_metering(tmp_path, httpx_mock):
     fabric = mintry.init(api_key="test_key_2026", db_path=db)
 
     mandate_id = "mt_task_882x"
-    fabric.wallet.add_funds(mandate_id, 1.00)
+    fabric.wallet.create_mandate(mandate_id, 1.00)
 
     mock_response = {
         "id": "chatcmpl-async",
@@ -57,6 +57,8 @@ async def test_async_interception_metering(tmp_path, httpx_mock):
             headers={"x-mintry-mandate": mandate_id}
         )
 
+    from mintry.interceptors.global_http import _flush_metering_queue
+    _flush_metering_queue()
     final_spent = fabric.wallet.get_spent(mandate_id)
     delta = final_spent - initial_spent
 
@@ -91,7 +93,7 @@ async def test_async_intent_blocking(tmp_path):
     """Async requests with prohibited intent are blocked."""
     db = str(tmp_path / "vouchers.db")
     fabric = mintry.init(api_key="test_key_2026", db_path=db)
-    fabric.wallet.add_funds("mt_task_882x", 1.00)
+    fabric.wallet.create_mandate("mt_task_882x", 1.00)
 
     async with httpx.AsyncClient() as client:
         with pytest.raises(PermissionError, match="Prohibited Intent"):
@@ -172,6 +174,7 @@ def test_pricing_integrated_with_interceptor(tmp_path, httpx_mock):
     )
 
     from openai import OpenAI
+    from mintry.interceptors.global_http import _flush_metering_queue
     client = OpenAI(api_key="sk-mock-key")
     client.chat.completions.create(
         model="gpt-5-preview",
@@ -179,6 +182,7 @@ def test_pricing_integrated_with_interceptor(tmp_path, httpx_mock):
         extra_headers={"X-Mintry-Mandate": "pricing_test"}
     )
 
+    _flush_metering_queue()
     spent = fabric.wallet.get_spent("pricing_test")
     # GPT-5: 1000 * $0.000005 + 1000 * $0.000015 = $0.020
     assert spent == pytest.approx(0.020, rel=1e-3)

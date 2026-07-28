@@ -1,36 +1,19 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mintry Dashboard
 
-## Getting Started
+Next.js App Router UI for local spend observability and policy administration.
 
-First, run the development server:
+## Run locally
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Start the Python API: `uv run mintry dashboard --db test_data/local.db --host 127.0.0.1 --port 8000`
+2. `npm install && npm run dev`
+3. Open **http://localhost:3000** (not `127.0.0.1` — see `AGENTS.md`)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Auth
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Set `MINTRY_DASHBOARD_ADMIN_TOKEN` for mutating routes. Log in via `POST /api/login` with `{ "token": "..." }` (httpOnly cookie) or send `Authorization: Bearer …`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Forward the same (or separate) token to Python with `MINTRY_DASHBOARD_API_TOKEN`.
 
-## Learn More
+## Policy signing
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Uses canonical ES256 (`src/lib/policy-crypto.ts`) with `MINTRY_POLICY_PRIVATE_KEY`. Mock signatures require explicit `MINTRY_ALLOW_MOCK_SIGNATURES=1` and are rejected when signatures are required.

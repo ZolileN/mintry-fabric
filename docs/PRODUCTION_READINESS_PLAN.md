@@ -92,9 +92,9 @@ Next signs with `JSON.stringify` + `MINTRY_PRIVATE_KEY` (or mock). Python verifi
 
 ### Acceptance
 
-- [ ] One env naming scheme in `.env.example`, `SUPABASE_SETUP.md`, dashboard, and `init()`
-- [ ] CI test proves Next-shaped canonical bytes verify in Python
-- [ ] Production config without keys cannot publish “signed” policies
+- [x] One env naming scheme in `.env.example`, `SUPABASE_SETUP.md`, dashboard, and `init()`
+- [x] CI test proves Next-shaped canonical bytes verify in Python
+- [x] Production config without keys cannot publish “signed” policies
 
 ### Principle check
 
@@ -147,9 +147,9 @@ Production dashboard allocate/revoke should **update the next policy version** (
 
 ### Acceptance
 
-- [ ] E2E test: policy vN cap $1.00 with $0.99 spent → next LLM call blocked without hitting control plane
-- [ ] E2E test: unreachable control plane → LKG still enforces previous cap
-- [ ] E2E test: invalid signature → cache not swapped; audit/log event recorded
+- [x] E2E test: policy vN cap $1.00 with $0.99 spent → next LLM call blocked without hitting control plane
+- [x] E2E test: unreachable control plane → LKG still enforces previous cap
+- [x] E2E test: invalid signature → cache not swapped; audit/log event recorded
 - [ ] Test spy: interceptor path makes zero outbound sockets to control plane
 - [ ] Repeated `init()` is idempotent (same engine/interceptor; no dual wallets)
 

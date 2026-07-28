@@ -2,6 +2,11 @@
 
 Never called from the enforcement hot path.
 Used only during async policy sync to verify control-plane signed bundles.
+
+Canonical signing contract (shared with apps/dashboard):
+- Payload fields: version, mandates, issued_at, issued_by
+- Bytes: JSON with sorted keys, separators=(",", ":"), UTF-8
+- Alg: ES256 (ECDSA P-256 + SHA-256), signature base64 (DER)
 """
 
 from __future__ import annotations
@@ -9,12 +14,29 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import cast
+from typing import Any, cast
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.exceptions import InvalidSignature
 
 logger = logging.getLogger(__name__)
+
+CANONICAL_SIGNING_FIELDS = ("version", "mandates", "issued_at", "issued_by")
+
+
+def canonical_signing_payload(bundle_dict: dict[str, Any]) -> dict[str, Any]:
+    """Extract the canonical unsigned payload from a bundle dict."""
+    return {k: bundle_dict[k] for k in CANONICAL_SIGNING_FIELDS if k in bundle_dict}
+
+
+def canonical_policy_payload_bytes(bundle_dict: dict[str, Any]) -> bytes:
+    """Serialize the canonical signing payload to UTF-8 bytes.
+
+    Must match dashboard `canonicalStringify` output byte-for-byte for the
+    same logical payload.
+    """
+    payload = canonical_signing_payload(bundle_dict)
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 def verify_policy_bundle_signature(
@@ -44,9 +66,7 @@ def verify_policy_bundle_signature(
             serialization.load_pem_public_key(public_key_pem)
         )
 
-        # Reconstruct the signing payload (bundle without signature)
-        signing_payload = {k: v for k, v in bundle_dict.items() if k != "signature"}
-        message = json.dumps(signing_payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        message = canonical_policy_payload_bytes(bundle_dict)
 
         # Decode the signature from base64
         signature_bytes = base64.b64decode(bundle_dict["signature"])
@@ -87,9 +107,7 @@ def sign_policy_bundle(
             serialization.load_pem_private_key(private_key_pem, password=None)
         )
 
-        # Sign the bundle (excluding signature field)
-        signing_payload = {k: v for k, v in bundle_dict.items() if k != "signature"}
-        message = json.dumps(signing_payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        message = canonical_policy_payload_bytes(bundle_dict)
 
         signature_bytes = private_key.sign(message, ec.ECDSA(hashes.SHA256()))
 

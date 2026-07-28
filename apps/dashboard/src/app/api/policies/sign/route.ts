@@ -1,15 +1,32 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import {
+  allowMockSignatures,
+  requirePolicySignatures,
+  resolvePolicyPrivateKey,
+  signPolicyBundleCanonical,
+} from '@/lib/policy-crypto';
+import { requireDashboardAuth } from '@/lib/auth';
 
-// Use environment variables for Supabase connection
-const supabaseUrl = process.env.MINTRY_CONTROL_PLANE_URL || 'https://wudyreicddrqdysplxai.supabase.co';
-const supabaseServiceKey = process.env.MINTRY_SERVICE_ROLE_KEY || process.env.MINTRY_CONTROL_PLANE_KEY || 'dummy_key_to_prevent_crash_on_load';
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const supabaseUrl = process.env.MINTRY_CONTROL_PLANE_URL || '';
+const supabaseServiceKey =
+  process.env.MINTRY_SERVICE_ROLE_KEY || process.env.MINTRY_CONTROL_PLANE_KEY || '';
 
 export async function POST(request: Request) {
+  const auth = await requireDashboardAuth(request);
+  if (!auth.ok) {
+    return auth.response;
+  }
+
   try {
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { error: 'Control plane is not configured' },
+        { status: 503 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const body = await request.json();
     const { agent_id, mandates } = body;
 
@@ -17,7 +34,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing agent_id or mandates' }, { status: 400 });
     }
 
-    // 1. Get current version from Supabase
+    if (typeof mandates !== 'object' || Array.isArray(mandates)) {
+      return NextResponse.json(
+        { error: 'mandates must be an object map of mandate_id → {max_usd, ...}' },
+        { status: 400 }
+      );
+    }
+
     const { data: latestPolicy, error: fetchError } = await supabase
       .from('policy_bundles')
       .select('version')
@@ -34,57 +57,61 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch latest policy' }, { status: 500 });
     }
 
-    // 2. Prepare the policy bundle
     const issuedAt = new Date().toISOString();
-    const issuedBy = 'vercel_dashboard_signer';
-    
+    const issuedBy = auth.subject || 'vercel_dashboard_signer';
+
     const signingPayload = {
       version: newVersion,
       mandates,
       issued_at: issuedAt,
-      issued_by: issuedBy
+      issued_by: issuedBy,
     };
 
-    // 3. Cryptographically sign the bundle (Mocked for spike if no key)
-    let signature = 'mock_signature_for_phase2_spike';
-    const privateKey = process.env.MINTRY_PRIVATE_KEY;
+    const privateKey = resolvePolicyPrivateKey();
+    let signature: string;
+
     if (privateKey) {
-      const message = Buffer.from(JSON.stringify(signingPayload));
-      const sign = crypto.createSign('SHA256');
-      sign.update(message);
-      signature = sign.sign(privateKey, 'base64');
+      signature = signPolicyBundleCanonical(signingPayload, privateKey);
+    } else if (allowMockSignatures() && !requirePolicySignatures()) {
+      console.warn('[mintry] Signing with mock signature (MINTRY_ALLOW_MOCK_SIGNATURES=1)');
+      signature = 'mock_signature_for_phase2_spike';
+    } else {
+      return NextResponse.json(
+        {
+          error:
+            'MINTRY_POLICY_PRIVATE_KEY is required to sign policies. ' +
+            'For local spike-only use set MINTRY_ALLOW_MOCK_SIGNATURES=1.',
+        },
+        { status: 500 }
+      );
     }
 
     const fullBundle = {
       ...signingPayload,
-      signature
+      signature,
     };
 
-    // 4. Insert into Supabase
-    const { error: insertError } = await supabase
-      .from('policy_bundles')
-      .insert([
-        {
-          agent_id,
-          version: newVersion,
-          policy_json: mandates,
-          signature,
-          issued_at: issuedAt,
-          issued_by: issuedBy
-        }
-      ]);
+    const { error: insertError } = await supabase.from('policy_bundles').insert([
+      {
+        agent_id,
+        version: newVersion,
+        policy_json: mandates,
+        signature,
+        issued_at: issuedAt,
+        issued_by: issuedBy,
+      },
+    ]);
 
     if (insertError) {
       console.error('Error inserting policy:', insertError);
       return NextResponse.json({ error: 'Failed to save policy to control plane' }, { status: 500 });
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       version: newVersion,
-      bundle: fullBundle
+      bundle: fullBundle,
     });
-
   } catch (error) {
     console.error('Policy signer error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
