@@ -12,6 +12,7 @@ This documentation set is aligned to the current code in `src/mintry`.
 | [Architecture Map](ARCHITECTURE.md) | Control plane / data plane topology and the Six Principles |
 | [Control Plane Spec](CONTROL_PLANE_SPEC.md) | Full implementation spec — policy model, phased roadmap, recorded decisions |
 | [App Analysis](APP_ANALYSIS.md) | Current-state analysis of apps, SDKs, and architecture gaps |
+| [Production Readiness Plan](PRODUCTION_READINESS_PLAN.md) | Workstreams to close analysis gaps and ship Phase 1 production |
 
 ## Getting Started
 

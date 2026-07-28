@@ -285,7 +285,9 @@ slow OPA CLI on the hot path), central governance changes do not govern traffic.
 
 ## 7. Recommended priority order
 
-Ordered by architectural leverage, not calendar estimates:
+Ordered by architectural leverage, not calendar estimates. The full execution
+plan (workstreams P0–P7, acceptance criteria, PR slices) lives in
+[`PRODUCTION_READINESS_PLAN.md`](./PRODUCTION_READINESS_PLAN.md).
 
 1. **Close the enforce loop:** route interceptor pre-flight through verified
    local policy state (deterministic numbers/rules only; no network; no slow
