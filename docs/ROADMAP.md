@@ -116,6 +116,10 @@ See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
 ## Notes
 
-- Package version, CHANGELOG, and documentation are now aligned to the `v0.5.0` feature set.
+- Package version, CHANGELOG, and documentation claim a rich feature set; treat
+  advertised `1.0.0` as aspirational until
+  [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md) Definition of
+  Done is met (suggested interim: `0.6.0` after enforce-loop + crypto + auth).
 - Documentation in this folder is written against the current code in `src/mintry`.
-- Remaining v1.0.0 blockers: Docker packaging, deployment guidance, TypeScript SDK, and stable public API promotion.
+- Remaining Phase 1 production blockers are enumerated as P0–P7 in the
+  production readiness plan (not Docker alone).
