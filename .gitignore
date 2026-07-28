@@ -13,3 +13,10 @@ vouchers.db-shm
 # Environment
 .env
 .env.supabase
+.env.local
+apps/dashboard/.env.local
+
+# Go
+apps/sidecar/mintry-proxy
+*.exe
+

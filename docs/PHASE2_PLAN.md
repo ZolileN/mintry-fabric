@@ -35,7 +35,7 @@ Author (Dashboard)
 | **E0** | Fleet Option A authoring + validation | v1.0.0 | Author centrally; enforce locally via existing caps |
 | **E1** | Agent-grouped ledger (UI) | E0 optional | Presentation only; ledger stays append-only |
 | **E2** | Org / project hierarchy (data model) | E0 | Inheritance resolves at sync time into flat caps |
-| **E3** | Go sidecar (ADR-003) | E0 | Same local authorize contract; HTTP_PROXY path |
+| **E3** | Go sidecar (ADR-003) | E0 | Same local authorize contract; HTTP_PROXY path — **scaffold done** |
 | **E4** | OPA bundle compile-at-sync | E2 | Never invoke OPA on hot path |
 | **E5** | Vault alias orchestration | E3 | Secrets never on Mintry servers |
 
@@ -73,6 +73,26 @@ Recommended order: **E0 → E1 → E3 scaffold → E2 → E4/E5**.
 
 Group mandate rows by `agent_id` (default: mandate id) with rollup budget/spent/policy version. No schema migration required for the first cut.
 
-## E2+ — Later
+## E3 — Go sidecar scaffold (ADR-003)
 
-See ROADMAP Phase 2 checklist. Org hierarchy must compile to flat per-agent numbers before sync (Principle 6). Sidecar must reuse the same authorize semantics as the Python interceptor.
+### Deliverables
+
+1. **`apps/sidecar`** — `mintry-proxy` forward proxy on `:8820`
+2. Local SQLite authorize + spend + audit (pure Go `modernc.org/sqlite`, WAL)
+3. Intent blocklist (same phrases as Python interceptor)
+4. Alpine Dockerfile + `docker-compose` `mintry-proxy` service + k8s example
+5. Go unit tests for authorize / block-before-upstream / metering
+
+### Honest limits (follow-ups)
+
+- HTTPS `CONNECT` to LLM hosts is not MITM'd yet (501 unless uninspected tunnel flag)
+- Policy poller inside the sidecar (LKG verify) — still Python SDK for now
+- No Redis fleet counter (Option A partitions remain the multi-agent model)
+
+### Acceptance
+
+- `go test ./...` in `apps/sidecar` passes
+- Exhausted mandate returns 402 without calling upstream
+- `/healthz` reports ledger path
+- Hot path performs zero control-plane network I/O
+

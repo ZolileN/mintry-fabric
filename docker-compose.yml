@@ -19,23 +19,37 @@ services:
       - MINTRY_DB_PATH=/root/.mintry/vouchers.db
     restart: unless-stopped
 
+  # Phase 2 Go sidecar (ADR-003) — shares the same ledger volume
+  mintry-proxy:
+    build:
+      context: ./apps/sidecar
+      dockerfile: Dockerfile
+    container_name: mintry-proxy
+    ports:
+      - "8820:8820"
+    volumes:
+      - mintry-data:/data
+    environment:
+      - MINTRY_DB_PATH=/data/vouchers.db
+      - MINTRY_PROXY_ADDR=0.0.0.0:8820
+    restart: unless-stopped
+
   # Example application container
   # In a real deployment, your app would be built from your own Dockerfile
-  # and use the Python or Node.js SDK to interact with the shared ledger.
+  # and use HTTP_PROXY to route LLM traffic through mintry-proxy.
   app:
     image: node:22-slim
     container_name: mintry-app
-    # Keeping the container alive for demonstration purposes
     command: ["sleep", "infinity"]
     volumes:
       - mintry-data:/root/.mintry
     environment:
       - MINTRY_API_KEY=your_production_key_here
-      # Optional: Explicitly configure where the SDK should look for the DB
-      # - MINTRY_DB_PATH=/root/.mintry/vouchers.db
+      - HTTP_PROXY=http://mintry-proxy:8820
+      - HTTPS_PROXY=http://mintry-proxy:8820
+    depends_on:
+      - mintry-proxy
     restart: unless-stopped
 
 volumes:
   mintry-data:
-    # A persistent Docker volume to store vouchers.db securely across container restarts
-    driver: local

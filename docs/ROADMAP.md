@@ -74,7 +74,7 @@ See [PHASE2_PLAN.md](./PHASE2_PLAN.md).
 
 - [x] Fleet budget: Option A static sub-budget partitioning (E0)
 - [x] Agent-grouped ledger view (UI layer) (E1)
-- [ ] Go/Rust sidecar, Alpine Docker, K8s/ECS deployment (E3)
+- [x] Go sidecar scaffold — `apps/sidecar` / `mintry-proxy` (E3; HTTPS MITM follow-up)
 - [ ] Full Agent-as-primary data model + org/project hierarchy (E2)
 - [ ] OPA bundle evaluation for policy distribution/signing (E4)
 - [ ] Secrets orchestration via customer Vault (alias-only) (E5)

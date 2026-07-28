@@ -10,6 +10,7 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) 
 
 - Phase 2 E0: Fleet Option A static sub-budget partitioning (`mintry.core.fleet`, dashboard `POST /api/fleets/partition`)
 - Phase 2 E1: Agent-grouped ledger rollups in the dashboard UI
+- Phase 2 E3: Go sidecar scaffold (`apps/sidecar` / `mintry-proxy`) — local SQLite authorize, Alpine image, compose + k8s example
 - `docs/PHASE2_PLAN.md` enterprise workstream map
 
 ## [1.0.0] - 2026-07-28

@@ -1,0 +1,45 @@
+# Example: app + mintry-proxy sidecar sharing an emptyDir ledger.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-mintry
+  labels:
+    app: example
+spec:
+  containers:
+    - name: app
+      image: your-app:latest
+      env:
+        - name: HTTP_PROXY
+          value: http://127.0.0.1:8820
+        - name: HTTPS_PROXY
+          value: http://127.0.0.1:8820
+        - name: NO_PROXY
+          value: localhost,127.0.0.1
+        - name: MINTRY_DB_PATH
+          value: /mintry/vouchers.db
+      volumeMounts:
+        - name: mintry-data
+          mountPath: /mintry
+    - name: mintry-proxy
+      image: mintry-proxy:latest
+      ports:
+        - containerPort: 8820
+          name: proxy
+      env:
+        - name: MINTRY_PROXY_ADDR
+          value: 0.0.0.0:8820
+        - name: MINTRY_DB_PATH
+          value: /data/vouchers.db
+      volumeMounts:
+        - name: mintry-data
+          mountPath: /data
+      readinessProbe:
+        httpGet:
+          path: /healthz
+          port: 8820
+        initialDelaySeconds: 1
+        periodSeconds: 5
+  volumes:
+    - name: mintry-data
+      emptyDir: {}

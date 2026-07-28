@@ -65,14 +65,23 @@ volumes:
 ### The SQLite NFS Problem
 SQLite does not support concurrent writes across network file systems (NFS, EFS) reliably. **Do not put `vouchers.db` on an EFS mount** expecting multiple distinct application pods to share the ledger safely.
 
-### Recommended Pattern: The Sidecar Proxy (Coming Soon)
-For Kubernetes, the recommended pattern is the **Sidecar Proxy**. Rather than running SDK-level interception, you deploy the Mintry proxy as a sidecar container within your Pod.
+### Recommended Pattern: The Sidecar Proxy (Phase 2)
+
+For Kubernetes, deploy the Mintry proxy as a sidecar container within your Pod
+(ADR-003). Binary: `apps/sidecar` (`mintry-proxy`).
 
 1. **The Pod**: Contains your `app` container and the `mintry-proxy` container.
 2. **The Ledger**: An `emptyDir` volume shared between the containers holds `vouchers.db` for the lifecycle of the Pod.
-3. **Routing**: The `app` container sets `HTTP_PROXY=localhost:8820`.
+3. **Routing**: The `app` container sets `HTTP_PROXY=http://127.0.0.1:8820`.
+4. **Health**: Probe `GET /healthz` on port 8820.
 
-*(Note: Centralized budget synchronization across multiple Pods requires an external remote-sync worker, which is on the roadmap but not available in v1.0.0).*
+Example manifests: `apps/sidecar/deploy/k8s-sidecar.yaml` and root `docker-compose.yml` (`mintry-proxy` service).
+
+> **HTTPS:** This scaffold meters plain-HTTP absolute-form requests. `CONNECT` to LLM hosts is blocked unless `MINTRY_ALLOW_UNINSPECTED_HTTPS=1` (tunnel without metering). TLS MITM is a follow-up.
+
+Fleet-wide hard caps across Pods use **Option A** static partitions (per-agent signed `max_usd`), not a shared Redis counter. See [PHASE2_PLAN.md](./PHASE2_PLAN.md).
+
+*(Centralized live spend aggregation across Pods remains out of scope for Option A.)*
 
 ## 4. Production Security
 

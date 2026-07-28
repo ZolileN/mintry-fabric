@@ -182,7 +182,7 @@ Company → department → project → agent budget inheritance.
 
 ### Phase 2 — Enterprise
 
-- Go/Rust sidecar, K8s/ECS deployment
+- [x] Go sidecar scaffold (`apps/sidecar` / `mintry-proxy`; HTTPS MITM follow-up)
 - [x] Option A fleet budget partitioning (static shares → per-agent signed caps)
 - [x] Agent-grouped ledger (UI)
 - Full Agent-as-primary data model
