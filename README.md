@@ -47,7 +47,7 @@ uv add git+https://github.com/ZolileN/mintry-fabric.git
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (Six Principles) and
-[docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md). Current release: **v1.1.0**.
+[docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md). Current release: **v1.2.0**.
 
 ## CLI
 

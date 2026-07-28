@@ -4,6 +4,12 @@ All notable changes to Mintry Fabric are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [Unreleased]
+
+### Changed
+
+- Rewrote `docs/DEPLOYMENT.md` as the production guide for Vercel + Supabase + Python agents
+
 ## [1.2.0] - 2026-07-28
 
 ### Added
