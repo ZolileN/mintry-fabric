@@ -25,7 +25,23 @@ ChartJS.register(
   Filler
 );
 
-interface Mandate { id: string; status: string; budget_usd: number; spent_usd: number; expires_at: string | null; remaining_headroom?: number; policy_version?: number | null; }
+interface Mandate {
+  id: string;
+  agent_id?: string;
+  status: string;
+  budget_usd: number;
+  spent_usd: number;
+  expires_at: string | null;
+  remaining_headroom?: number;
+  policy_version?: number | null;
+}
+interface AgentGroup {
+  agent_id: string;
+  mandates: Mandate[];
+  budget_usd: number;
+  spent_usd: number;
+  policy_version: number | null;
+}
 interface LogEvent { action: string; timestamp: string; mandate_id: string; details?: string; amount?: number; }
 interface TopMandate { id: string; spent_usd: number; }
 interface DashboardStats {
@@ -79,6 +95,12 @@ export default function Dashboard() {
   const [feedback, setFeedback] = useState({ text: '', type: '' });
   const [policyForm, setPolicyForm] = useState({ agentId: '', policyJson: '' });
   const [policyFeedback, setPolicyFeedback] = useState({ text: '', type: '' });
+  const [fleetForm, setFleetForm] = useState({
+    fleetId: '',
+    totalUsd: '',
+    partitionsJson: '{\n  "agent_a": 40.0,\n  "agent_b": 60.0\n}',
+  });
+  const [fleetFeedback, setFleetFeedback] = useState({ text: '', type: '' });
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -157,6 +179,54 @@ export default function Dashboard() {
     setTimeout(() => setPolicyFeedback({ text: '', type: '' }), 4000);
   };
 
+  const handleFleetPartition = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let partitions: Record<string, number>;
+      try {
+        partitions = JSON.parse(fleetForm.partitionsJson);
+      } catch {
+        setFleetFeedback({ text: 'Invalid partitions JSON', type: 'error' });
+        setTimeout(() => setFleetFeedback({ text: '', type: '' }), 4000);
+        return;
+      }
+
+      const res = await fetch('/api/fleets/partition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fleet_id: fleetForm.fleetId,
+          total_usd: parseFloat(fleetForm.totalUsd),
+          partitions,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Fleet partition failed');
+
+      const agentSummary = (json.agents || [])
+        .map((a: { agent_id: string; version: number; share_usd: number }) =>
+          `${a.agent_id}@v${a.version}=$${a.share_usd}`
+        )
+        .join(', ');
+      setFleetFeedback({
+        text: `Fleet ${json.fleet_id}: pushed ${json.agents?.length || 0} agents (${agentSummary})`,
+        type: 'success',
+      });
+      setFleetForm({
+        fleetId: '',
+        totalUsd: '',
+        partitionsJson: '{\n  "agent_a": 40.0,\n  "agent_b": 60.0\n}',
+      });
+      fetchSummary();
+    } catch (err: unknown) {
+      setFleetFeedback({
+        text: err instanceof Error ? err.message : String(err),
+        type: 'error',
+      });
+    }
+    setTimeout(() => setFleetFeedback({ text: '', type: '' }), 6000);
+  };
+
   const revokeMandate = async (id: string) => {
     if (!confirm(`Revoke budget for agent: ${id}?`)) return;
     try {
@@ -176,6 +246,32 @@ export default function Dashboard() {
         showFeedback("Connection error", "error");
     }
   };
+
+  const agentGroups: AgentGroup[] = (() => {
+    const map = new Map<string, AgentGroup>();
+    for (const m of data.mandates) {
+      const agentId = (m.agent_id || m.id || 'unknown').trim() || 'unknown';
+      let group = map.get(agentId);
+      if (!group) {
+        group = {
+          agent_id: agentId,
+          mandates: [],
+          budget_usd: 0,
+          spent_usd: 0,
+          policy_version: null,
+        };
+        map.set(agentId, group);
+      }
+      group.mandates.push(m);
+      group.budget_usd += m.budget_usd || 0;
+      group.spent_usd += m.spent_usd || 0;
+      const pv = m.policy_version ?? null;
+      if (pv != null && (group.policy_version == null || pv > group.policy_version)) {
+        group.policy_version = pv;
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.agent_id.localeCompare(b.agent_id));
+  })();
 
   const showFeedback = (text: string, type: string) => {
     setFeedback({ text, type });
@@ -431,12 +527,15 @@ export default function Dashboard() {
             <div className="bento-card col-8">
                 <div className="panel-header">
                     <h2>Agent Ledger</h2>
+                    <span style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)'}}>
+                      {agentGroups.length} agent{agentGroups.length === 1 ? '' : 's'}
+                    </span>
                 </div>
                 <div className="table-wrapper">
                     <table>
                         <thead>
                             <tr>
-                                <th>Agent</th>
+                                <th>Agent / Mandate</th>
                                 <th>Status</th>
                                 <th>Budget</th>
                                 <th>Spent</th>
@@ -447,42 +546,66 @@ export default function Dashboard() {
                             </tr>
                         </thead>
                         <tbody>
-                            {data.mandates.length === 0 ? (
+                            {agentGroups.length === 0 ? (
                               <tr><td colSpan={data.has_expiry ? 8 : 7} style={{textAlign:'center', color:'var(--text-tertiary)', fontFamily:'var(--font-mono)', fontSize:'12px'}}>{"// Mandate ledger empty"}</td></tr>
                             ) : (
-                              data.mandates.map((m, i: number) => {
-                                let badgeClass = 'badge-active';
-                                if (m.status === 'exhausted') badgeClass = 'badge-exhausted';
-                                if (m.status === 'expired') badgeClass = 'badge-expired';
-                                const remaining = typeof m.remaining_headroom === 'number'
-                                    ? m.remaining_headroom
-                                    : ((m.budget_usd || 0) - (m.spent_usd || 0));
-
-                                return (
-                                  <tr key={i}>
-                                      <td className="td-id">{m.id}</td>
-                                      <td><span className={`badge ${badgeClass}`}>{m.status}</span></td>
-                                      <td>${m.budget_usd.toFixed(4)}</td>
-                                      <td>${m.spent_usd.toFixed(4)}</td>
-                                      <td>${remaining.toFixed(4)}</td>
-                                      <td>
-                                          <span className="badge" style={{background: 'rgba(255,255,255,0.05)', color: '#8a8a8a'}}>
-                                              v{m.policy_version || data.policy_sync?.policy_version || '—'}
-                                          </span>
-                                      </td>
-                                      {data.has_expiry && (
-                                        <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>
-                                          {formatExpiry(m.expires_at) ?? '—'}
-                                        </td>
-                                      )}
-                                      <td>
-                                          <button className="btn btn-danger" onClick={() => revokeMandate(m.id)}>Revoke</button>
-                                          <button className="btn" onClick={() => {
-                                            setFormState({ id: m.id, budget: m.budget_usd.toString(), expiry: '' });
-                                          }}>Top-up</button>
-                                      </td>
+                              agentGroups.flatMap((group) => {
+                                const groupRemaining = group.budget_usd - group.spent_usd;
+                                const header = (
+                                  <tr key={`g-${group.agent_id}`} style={{background:'rgba(255,255,255,0.03)'}}>
+                                    <td className="td-id" colSpan={2} style={{fontWeight:600}}>
+                                      {group.agent_id}
+                                      <span style={{marginLeft:'0.5rem', fontWeight:400, color:'var(--text-tertiary)', fontSize:'11px'}}>
+                                        {group.mandates.length} mandate{group.mandates.length === 1 ? '' : 's'}
+                                      </span>
+                                    </td>
+                                    <td style={{fontFamily:'var(--font-mono)', fontSize:'12px'}}>${group.budget_usd.toFixed(4)}</td>
+                                    <td style={{fontFamily:'var(--font-mono)', fontSize:'12px'}}>${group.spent_usd.toFixed(4)}</td>
+                                    <td style={{fontFamily:'var(--font-mono)', fontSize:'12px'}}>${groupRemaining.toFixed(4)}</td>
+                                    <td>
+                                      <span className="badge" style={{background: 'rgba(16,185,129,0.12)', color: 'var(--mint)'}}>
+                                        v{group.policy_version ?? data.policy_sync?.policy_version ?? '—'}
+                                      </span>
+                                    </td>
+                                    {data.has_expiry && <td />}
+                                    <td />
                                   </tr>
-                                )
+                                );
+                                const rows = group.mandates.map((m, i: number) => {
+                                  let badgeClass = 'badge-active';
+                                  if (m.status === 'exhausted') badgeClass = 'badge-exhausted';
+                                  if (m.status === 'expired') badgeClass = 'badge-expired';
+                                  const remaining = typeof m.remaining_headroom === 'number'
+                                      ? m.remaining_headroom
+                                      : ((m.budget_usd || 0) - (m.spent_usd || 0));
+
+                                  return (
+                                    <tr key={`${group.agent_id}-${m.id}-${i}`}>
+                                        <td className="td-id" style={{paddingLeft:'1.5rem', color:'var(--text-secondary)'}}>{m.id}</td>
+                                        <td><span className={`badge ${badgeClass}`}>{m.status}</span></td>
+                                        <td>${m.budget_usd.toFixed(4)}</td>
+                                        <td>${m.spent_usd.toFixed(4)}</td>
+                                        <td>${remaining.toFixed(4)}</td>
+                                        <td>
+                                            <span className="badge" style={{background: 'rgba(255,255,255,0.05)', color: '#8a8a8a'}}>
+                                                v{m.policy_version || data.policy_sync?.policy_version || '—'}
+                                            </span>
+                                        </td>
+                                        {data.has_expiry && (
+                                          <td style={{color:'var(--text-secondary)', fontFamily:'var(--font-mono)', fontSize:'11px'}}>
+                                            {formatExpiry(m.expires_at) ?? '—'}
+                                          </td>
+                                        )}
+                                        <td>
+                                            <button className="btn btn-danger" onClick={() => revokeMandate(m.id)}>Revoke</button>
+                                            <button className="btn" onClick={() => {
+                                              setFormState({ id: m.id, budget: m.budget_usd.toString(), expiry: '' });
+                                            }}>Top-up</button>
+                                        </td>
+                                    </tr>
+                                  );
+                                });
+                                return [header, ...rows];
                               })
                             )}
                         </tbody>
@@ -524,6 +647,29 @@ export default function Dashboard() {
                     </div>
                     <button type="submit" className="btn-submit" style={{background: 'var(--blue)'}}>Sign & Push vNext</button>
                     <div className={`feedback-message ${policyFeedback.type}`}>{policyFeedback.text}</div>
+                </form>
+
+                <div className="panel-header" style={{ marginTop: '2rem' }}>
+                    <h2>Fleet Partition (Option A)</h2>
+                </div>
+                <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', margin:'0 0 0.75rem'}}>
+                  Split a fleet total into static per-agent shares. Sum must be ≤ total. Each agent gets a signed policy with its local max_usd.
+                </p>
+                <form onSubmit={handleFleetPartition} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="fleet-id">Fleet ID</label>
+                        <input type="text" id="fleet-id" required placeholder="e.g. prod-us-east" className="form-input" value={fleetForm.fleetId} onChange={e => setFleetForm({...fleetForm, fleetId: e.target.value})} />
+                    </div>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="fleet-total">Fleet Total (USD)</label>
+                        <input type="number" id="fleet-total" required step="0.01" min="0.01" placeholder="e.g. 1000.00" className="form-input" value={fleetForm.totalUsd} onChange={e => setFleetForm({...fleetForm, totalUsd: e.target.value})} />
+                    </div>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="fleet-partitions">Partitions JSON</label>
+                        <textarea id="fleet-partitions" required rows={5} className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={fleetForm.partitionsJson} onChange={e => setFleetForm({...fleetForm, partitionsJson: e.target.value})} />
+                    </div>
+                    <button type="submit" className="btn-submit" style={{background: 'var(--mint)', color: '#050505'}}>Partition & Push</button>
+                    <div className={`feedback-message ${fleetFeedback.type}`}>{fleetFeedback.text}</div>
                 </form>
             </div>
         </div>

@@ -300,6 +300,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             mandates = [
                 {
                     "id": r[0],
+                    "agent_id": r[0],
                     "budget_usd": r[1],
                     "spent_usd": r[2],
                     "remaining_headroom": round((r[1] or 0.0) - (r[2] or 0.0), 4),
