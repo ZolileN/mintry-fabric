@@ -24,6 +24,19 @@ logger = logging.getLogger(__name__)
 CANONICAL_SIGNING_FIELDS = ("version", "mandates", "issued_at", "issued_by")
 
 
+def normalize_pem(pem: str | bytes) -> str | bytes:
+    """Normalize PEM material from .env (literal \\n → real newlines)."""
+    if isinstance(pem, bytes):
+        pem = pem.decode("utf-8")
+        as_bytes = True
+    else:
+        as_bytes = False
+    pem = pem.strip().strip('"').strip("'")
+    if "\\n" in pem and "-----BEGIN" in pem:
+        pem = pem.replace("\\n", "\n")
+    return pem.encode("utf-8") if as_bytes else pem
+
+
 def canonical_signing_payload(bundle_dict: dict[str, Any]) -> dict[str, Any]:
     """Extract the canonical unsigned payload from a bundle dict."""
     return {k: bundle_dict[k] for k in CANONICAL_SIGNING_FIELDS if k in bundle_dict}
@@ -58,6 +71,7 @@ def verify_policy_bundle_signature(
 
     try:
         # Load the public key
+        public_key_pem = normalize_pem(public_key_pem)
         if isinstance(public_key_pem, str):
             public_key_pem = public_key_pem.encode("utf-8")
 
@@ -99,6 +113,7 @@ def sign_policy_bundle(
         Base64-encoded signature string.
     """
     try:
+        private_key_pem = normalize_pem(private_key_pem)
         if isinstance(private_key_pem, str):
             private_key_pem = private_key_pem.encode("utf-8")
 

@@ -13,7 +13,7 @@ from mintry.core.engine import PolicyEngine
 from mintry.core.wallet import MintryWallet
 from mintry.core.policy_sync import PolicyCache, PolicySyncWorker
 from mintry.core.control_plane import SupabaseControlPlaneClient
-from mintry.core.crypto import verify_policy_bundle_signature
+from mintry.core.crypto import verify_policy_bundle_signature, normalize_pem
 from mintry.core.exceptions import MintryMandateExceeded
 from mintry.core.telemetry_batch import TelemetryBatcher
 from mintry import telemetry as _telemetry
@@ -92,6 +92,8 @@ def init(
         control_plane_public_key
         or os.environ.get("MINTRY_POLICY_PUBLIC_KEY")
     )
+    if resolved_public_key:
+        resolved_public_key = normalize_pem(resolved_public_key)
     control_plane_url = control_plane_url or os.environ.get("MINTRY_CONTROL_PLANE_URL")
     control_plane_key = control_plane_key or os.environ.get("MINTRY_CONTROL_PLANE_KEY")
 

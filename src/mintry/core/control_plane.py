@@ -114,7 +114,15 @@ class SupabaseControlPlaneClient:
                 params += f"&version=gt.{current_version}"
             url = f"{self.url}/rest/v1/policy_bundles?{params}"
 
-            status, body = _http_get(url, self._read_headers(), timeout=self.timeout)
+            # Prefer service role for policy reads when configured — anon keys are
+            # often blocked by RLS on policy_bundles. Agents should eventually use
+            # a scoped key; service role is the Phase 1 local/ops path.
+            headers = self._write_headers() if self.service_role_key else self._read_headers()
+            # Drop Prefer: return=minimal on GET
+            headers = {k: v for k, v in headers.items() if k != "Prefer"}
+            headers.setdefault("Content-Type", "application/json")
+
+            status, body = _http_get(url, headers, timeout=self.timeout)
 
             if status != 200:
                 logger.warning("Failed to fetch policy bundle: HTTP %s", status)

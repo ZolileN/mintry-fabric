@@ -36,13 +36,27 @@ class PolicyBundle:
     issued_at: str
     issued_by: str = ""
 
+    @staticmethod
+    def _normalize_issued_at(value: str) -> str:
+        """Normalize timestamptz forms so signature bytes match the signer.
+
+        Supabase often returns ``...+00:00`` for values signed as ``...Z``.
+        """
+        if not value:
+            return value
+        if value.endswith("+00:00"):
+            return value[:-6] + "Z"
+        if value.endswith("Z"):
+            return value
+        return value
+
     @classmethod
     def from_dict(cls, data: dict) -> "PolicyBundle":
         return cls(
             version=int(data["version"]),
             mandates=data.get("policy_json") or data.get("mandates", {}),
             signature=data.get("signature", ""),
-            issued_at=data.get("issued_at", ""),
+            issued_at=cls._normalize_issued_at(data.get("issued_at", "")),
             issued_by=data.get("issued_by", ""),
         )
 
