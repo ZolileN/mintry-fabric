@@ -70,14 +70,14 @@ See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
 ## Phase 2 — Enterprise
 
-See [PHASE2_PLAN.md](./PHASE2_PLAN.md).
+See [PHASE2_PLAN.md](./PHASE2_PLAN.md). **Gate complete (E0–E5).**
 
 - [x] Fleet budget: Option A static sub-budget partitioning (E0)
 - [x] Agent-grouped ledger view (UI layer) (E1)
 - [x] Go sidecar scaffold — `apps/sidecar` / `mintry-proxy` (E3; HTTPS MITM follow-up)
-- [ ] Full Agent-as-primary data model + org/project hierarchy (E2)
-- [ ] OPA bundle evaluation for policy distribution/signing (E4)
-- [ ] Secrets orchestration via customer Vault (alias-only) (E5)
+- [x] Full Agent-as-primary data model + org/project hierarchy (E2)
+- [x] OPA bundle evaluation for policy distribution/signing (E4 — compile-at-sync)
+- [x] Secrets orchestration via customer Vault (alias-only) (E5)
 
 ## Explicitly Deferred (§8)
 

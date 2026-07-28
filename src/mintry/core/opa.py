@@ -1,163 +1,179 @@
-"""OPA (Open Policy Agent) bundle evaluation for advanced policy logic.
+"""OPA bundle compile-at-sync (Phase 2 E4).
 
-OPA bundles are Rego policies compiled to JSON. Used for complex enforcement rules
-beyond simple budget allows/blocks.
+OPA may structure/distribute policy, but budget math stays in the custom
+evaluator. Bundles are **materialized at sync/apply time** into a flat
+``mandate_id → {max_usd, allow, expires_at}`` map for ``PolicyCache``.
 
-Never called from the enforcement hot path for Phase 1.
-Phase 1 focus: structure only. Phase 2: integrate OPA evaluation.
+Never spawn the OPA CLI from the authorize hot path.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 logger = logging.getLogger(__name__)
 
 
+def materialize_flat_rules(
+    mandates: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Compile mandate map into flat hot-path rules.
+
+    Accepts either:
+    - Already-flat ``{mandate_id: {max_usd, allow?, expires_at?}}``
+    - OPA-shaped ``{"mandate": {mandate_id: {...}}}`` or nested data.mintry
+
+    Returns only allow / max_usd / expires_at — deterministic numbers & booleans.
+    """
+    if not isinstance(mandates, Mapping):
+        return {}
+
+    source: Mapping[str, Any] = mandates
+    if "mandate" in mandates and isinstance(mandates["mandate"], Mapping):
+        source = mandates["mandate"]  # type: ignore[assignment]
+    elif "mintry" in mandates and isinstance(mandates["mintry"], Mapping):
+        inner = mandates["mintry"]
+        if "mandate" in inner and isinstance(inner["mandate"], Mapping):
+            source = inner["mandate"]  # type: ignore[assignment]
+        else:
+            source = inner  # type: ignore[assignment]
+
+    flat: dict[str, dict[str, Any]] = {}
+    for mandate_id, raw in source.items():
+        if not isinstance(raw, Mapping):
+            continue
+        rule: dict[str, Any] = {}
+        if "allow" in raw:
+            rule["allow"] = bool(raw["allow"])
+        if "max_usd" in raw:
+            try:
+                rule["max_usd"] = float(raw["max_usd"])
+            except (TypeError, ValueError):
+                logger.warning("Skipping non-numeric max_usd for %s", mandate_id)
+                continue
+        if "expires_at" in raw and raw["expires_at"]:
+            rule["expires_at"] = str(raw["expires_at"])
+        if "fleet_id" in raw:
+            rule["fleet_id"] = str(raw["fleet_id"])
+        if "fleet_total_usd" in raw:
+            try:
+                rule["fleet_total_usd"] = float(raw["fleet_total_usd"])
+            except (TypeError, ValueError):
+                pass
+        if rule:
+            flat[str(mandate_id)] = rule
+    return flat
+
+
 class OPABundleEvaluator:
-    """Evaluate OPA (Rego) policies compiled to bundles."""
+    """Load and materialize OPA-shaped bundles at sync time only."""
 
     def __init__(self, bundle_path: Optional[Path | str] = None):
-        """Initialize the OPA evaluator.
-
-        Args:
-            bundle_path: Path to OPA bundle JSON file.
-                        Falls back to ~/.mintry/opa_bundle.json if not provided.
-        """
         self.bundle_path = Path(bundle_path) if bundle_path else (
             Path.home() / ".mintry" / "opa_bundle.json"
         )
         self._bundle_cache: Optional[dict] = None
+        self._flat_rules: dict[str, dict[str, Any]] = {}
 
     def load_bundle(self) -> bool:
-        """Load OPA bundle from disk.
-
-        Returns:
-            True if bundle loaded successfully, False otherwise.
-        """
         if not self.bundle_path.exists():
             logger.debug("OPA bundle not found at %s", self.bundle_path)
             return False
-
         try:
             with open(self.bundle_path, "r") as f:
                 self._bundle_cache = json.load(f)
-            logger.info("Loaded OPA bundle from %s", self.bundle_path)
+            self._flat_rules = self.materialize()
+            logger.info(
+                "Loaded OPA bundle from %s (%d rules)",
+                self.bundle_path,
+                len(self._flat_rules),
+            )
             return True
         except Exception as exc:
             logger.error("Failed to load OPA bundle: %s", exc)
             return False
+
+    def set_bundle_data(self, data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Set in-memory bundle (e.g. from PolicyCache apply) and materialize."""
+        if "data" in data or "metadata" in data:
+            self._bundle_cache = data
+        else:
+            self._bundle_cache = {
+                "metadata": {"source": "policy_cache"},
+                "data": {"mintry": {"mandate": data}},
+            }
+        self._flat_rules = self.materialize()
+        return self._flat_rules
+
+    def materialize(self) -> dict[str, dict[str, Any]]:
+        """Materialize flat rules from the loaded bundle (sync-time only)."""
+        if not self._bundle_cache:
+            return {}
+        data = self._bundle_cache.get("data", self._bundle_cache)
+        if isinstance(data, Mapping):
+            mintry = data.get("mintry", data)
+            return materialize_flat_rules(mintry if isinstance(mintry, Mapping) else {})
+        return {}
+
+    @property
+    def flat_rules(self) -> dict[str, dict[str, Any]]:
+        return dict(self._flat_rules)
 
     def evaluate(
         self,
         query: str,
         input_data: dict[str, Any],
     ) -> Optional[Any]:
-        """Evaluate an OPA query against input data.
+        """Lookup against already-materialized flat rules.
 
-        Phase 1: Requires local `opa` CLI binary for evaluation.
-        Phase 2: Will integrate with embedded OPA runtime (no CLI dependency).
-
-        Args:
-            query: OPA query path (e.g. "data.mintry.allow_request")
-            input_data: Input context for the query
-
-        Returns:
-            The query result, or None if evaluation fails or OPA not available.
+        Does **not** spawn the OPA CLI. Returns rule dict, False if allow=false,
+        or None if missing.
         """
-        if not self._bundle_cache:
-            logger.debug("OPA bundle not loaded; skipping evaluation")
-            return None
+        del input_data  # reserved for future pure in-process predicates
+        if not self._flat_rules and self._bundle_cache:
+            self._flat_rules = self.materialize()
 
-        try:
-            # Phase 1: Use CLI if available (for testing)
-            result = self._evaluate_with_cli(query, input_data)
-            if result is not None:
-                return result
-
-            # Phase 1: Fallback to simple in-process evaluation
-            logger.debug("OPA CLI not available; using fallback evaluation")
-            return self._evaluate_in_process(query, input_data)
-
-        except Exception as exc:
-            logger.warning("OPA evaluation failed: %s", exc)
-            return None
-
-    def _evaluate_with_cli(self, query: str, input_data: dict) -> Optional[Any]:
-        """Evaluate query using local OPA CLI (if available).
-
-        Returns:
-            Query result, or None if OPA not installed/available.
-        """
-        try:
-            # Check if OPA binary is available
-            subprocess.run(["opa", "version"], capture_output=True, timeout=1, check=True)
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            return None
-
-        try:
-            cmd = ["opa", "eval", "-d", str(self.bundle_path), "-i", "-", query]
-            result = subprocess.run(
-                cmd,
-                input=json.dumps(input_data).encode(),
-                capture_output=True,
-                timeout=5,
-                check=True,
-            )
-
-            output = json.loads(result.stdout.decode())
-            if output.get("result"):
-                return output["result"][0].get("expressions", [{}])[0].get("value")
-
-            return None
-        except Exception as exc:
-            logger.debug("OPA CLI evaluation failed: %s", exc)
-            return None
-
-    def _evaluate_in_process(self, query: str, input_data: dict) -> Optional[Any]:
-        """Fallback: Simple in-process policy evaluation (Phase 1).
-
-        This is a placeholder for Phase 2 when we integrate a full OPA runtime.
-        Phase 1: Only supports basic queries like "data.mintry.mandate[<id>]"
-
-        Returns:
-            Query result, or None.
-        """
         if not query.startswith("data."):
             return None
+        parts = query.replace("data.", "").split(".")
+        mandate_id = None
+        if len(parts) >= 3 and parts[0] == "mintry" and parts[1] == "mandate":
+            mandate_id = parts[2]
+        elif len(parts) >= 2 and parts[0] == "mintry":
+            mandate_id = parts[1]
 
-        try:
-            path_parts = query.replace("data.", "").split(".")
-            result = self._bundle_cache.get("data", {})
+        if mandate_id and mandate_id in self._flat_rules:
+            rule = self._flat_rules[mandate_id]
+            if rule.get("allow") is False:
+                return False
+            return rule
 
-            for part in path_parts:
-                if isinstance(result, dict):
-                    result = result.get(part)
-                else:
-                    return None
+        return self._lookup_nested(parts)
 
-            return result
-        except Exception as exc:
-            logger.debug("Fallback in-process evaluation failed: %s", exc)
+    def _evaluate_in_process(self, query: str, input_data: dict) -> Optional[Any]:
+        """Backward-compatible alias used by existing tests."""
+        return self.evaluate(query, input_data)
+
+    def _lookup_nested(self, path_parts: list[str]) -> Optional[Any]:
+        if not self._bundle_cache:
             return None
+        result: Any = self._bundle_cache.get("data", {})
+        for part in path_parts:
+            if isinstance(result, dict):
+                result = result.get(part)
+            else:
+                return None
+        return result
 
     def validate_bundle(self) -> bool:
-        """Validate OPA bundle structure.
-
-        Returns:
-            True if bundle is valid, False otherwise.
-        """
         if not self._bundle_cache:
             return False
-
         required_fields = ["metadata", "data"]
         if not all(field in self._bundle_cache for field in required_fields):
             logger.warning("OPA bundle missing required fields")
             return False
-
         logger.info("OPA bundle validation passed")
         return True

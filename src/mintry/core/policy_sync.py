@@ -86,6 +86,7 @@ class PolicyCache:
         self._state = PolicyCacheState()
         self._wallet = wallet
         self._verify_fn = verify_fn
+        self._flat_rules: dict[str, dict[str, Any]] = {}
         self._load_from_disk()
 
     @property
@@ -97,8 +98,20 @@ class PolicyCache:
         bundle = self.get_active_policy()
         if not bundle or not isinstance(bundle.mandates, dict):
             return None
+        # Prefer sync-time materialized flat rules (OPA envelope unwrapped).
+        flat = getattr(self, "_flat_rules", None)
+        if isinstance(flat, dict) and mandate_id in flat:
+            rule = flat.get(mandate_id)
+            return rule if isinstance(rule, dict) else None
         rule = bundle.mandates.get(mandate_id)
-        return rule if isinstance(rule, dict) else None
+        if isinstance(rule, dict):
+            return rule
+        # OPA-shaped nested mandate map
+        nested = bundle.mandates.get("mandate")
+        if isinstance(nested, dict):
+            candidate = nested.get(mandate_id)
+            return candidate if isinstance(candidate, dict) else None
+        return None
 
     def _load_from_disk(self) -> None:
         if not self.cache_file.exists():
@@ -117,8 +130,11 @@ class PolicyCache:
                     pass
                 return
             synced = datetime.fromisoformat(raw["last_synced_at"])
+            from mintry.core.opa import materialize_flat_rules
+
             with self._lock:
                 self._state = PolicyCacheState(bundle=bundle, last_synced_at=synced)
+                self._flat_rules = materialize_flat_rules(bundle.mandates)
         except Exception as exc:
             logger.warning("Failed to load policy cache from disk: %s", exc)
 
@@ -276,6 +292,10 @@ class PolicyCache:
             now = datetime.now(timezone.utc)
             self._state = PolicyCacheState(bundle=bundle, last_synced_at=now)
             self._state.last_sync_error = None
+            # Sync-time materialization (E4): unwrap OPA envelopes into flat rules.
+            from mintry.core.opa import materialize_flat_rules
+
+            self._flat_rules = materialize_flat_rules(bundle.mandates)
 
         self._persist_to_disk(bundle, now)
         logger.info("Applied policy v%s%s", bundle.version, " (forced rollback)" if force else "")

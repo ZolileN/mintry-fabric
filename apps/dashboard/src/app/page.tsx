@@ -101,6 +101,33 @@ export default function Dashboard() {
     partitionsJson: '{\n  "agent_a": 40.0,\n  "agent_b": 60.0\n}',
   });
   const [fleetFeedback, setFleetFeedback] = useState({ text: '', type: '' });
+  const [orgForm, setOrgForm] = useState({
+    fleetId: 'acme-fleet',
+    orgJson: JSON.stringify({
+      id: 'acme',
+      kind: 'company',
+      budget_usd: 1000,
+      children: [{
+        id: 'eng',
+        kind: 'department',
+        budget_usd: 600,
+        children: [
+          { id: 'agent_a', kind: 'agent', budget_usd: 400 },
+          { id: 'agent_b', kind: 'agent' },
+        ],
+      }, {
+        id: 'sales',
+        kind: 'department',
+        budget_usd: 400,
+        children: [{ id: 'agent_c', kind: 'agent' }],
+      }],
+    }, null, 2),
+  });
+  const [orgFeedback, setOrgFeedback] = useState({ text: '', type: '' });
+  const [secretForm, setSecretForm] = useState({
+    aliasesJson: '[\n  {"alias": "OPENAI_PROD_KEY", "provider": "openai"}\n]',
+  });
+  const [secretFeedback, setSecretFeedback] = useState({ text: '', type: '' });
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -225,6 +252,77 @@ export default function Dashboard() {
       });
     }
     setTimeout(() => setFleetFeedback({ text: '', type: '' }), 6000);
+  };
+
+  const handleOrgCompile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let org: unknown;
+      try {
+        org = JSON.parse(orgForm.orgJson);
+      } catch {
+        setOrgFeedback({ text: 'Invalid org JSON', type: 'error' });
+        setTimeout(() => setOrgFeedback({ text: '', type: '' }), 4000);
+        return;
+      }
+      const res = await fetch('/api/orgs/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org,
+          fleet_id: orgForm.fleetId || undefined,
+          push: Boolean(orgForm.fleetId),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Org compile failed');
+      const caps = Object.entries(json.agent_caps || {})
+        .map(([k, v]) => `${k}=$${v}`)
+        .join(', ');
+      setOrgFeedback({
+        text: `Compiled ${Object.keys(json.agent_caps || {}).length} agents (${caps})` +
+          (json.fleet ? ` · fleet pushed` : ''),
+        type: 'success',
+      });
+      fetchSummary();
+    } catch (err: unknown) {
+      setOrgFeedback({
+        text: err instanceof Error ? err.message : String(err),
+        type: 'error',
+      });
+    }
+    setTimeout(() => setOrgFeedback({ text: '', type: '' }), 6000);
+  };
+
+  const handleSecretAliases = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let aliases: unknown;
+      try {
+        aliases = JSON.parse(secretForm.aliasesJson);
+      } catch {
+        setSecretFeedback({ text: 'Invalid aliases JSON', type: 'error' });
+        setTimeout(() => setSecretFeedback({ text: '', type: '' }), 4000);
+        return;
+      }
+      const res = await fetch('/api/secrets/aliases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aliases }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Alias validation failed');
+      setSecretFeedback({
+        text: `Validated ${(json.aliases || []).length} alias ref(s) — values stay on customer host`,
+        type: 'success',
+      });
+    } catch (err: unknown) {
+      setSecretFeedback({
+        text: err instanceof Error ? err.message : String(err),
+        type: 'error',
+      });
+    }
+    setTimeout(() => setSecretFeedback({ text: '', type: '' }), 6000);
   };
 
   const revokeMandate = async (id: string) => {
@@ -670,6 +768,40 @@ export default function Dashboard() {
                     </div>
                     <button type="submit" className="btn-submit" style={{background: 'var(--mint)', color: '#050505'}}>Partition & Push</button>
                     <div className={`feedback-message ${fleetFeedback.type}`}>{fleetFeedback.text}</div>
+                </form>
+
+                <div className="panel-header" style={{ marginTop: '2rem' }}>
+                    <h2>Org Hierarchy Compile</h2>
+                </div>
+                <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', margin:'0 0 0.75rem'}}>
+                  Company → department → project → agent. Inheritance compiles to flat caps; optional fleet push.
+                </p>
+                <form onSubmit={handleOrgCompile} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="org-fleet-id">Fleet ID (push when set)</label>
+                        <input type="text" id="org-fleet-id" className="form-input" value={orgForm.fleetId} onChange={e => setOrgForm({...orgForm, fleetId: e.target.value})} />
+                    </div>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="org-json">Org Tree JSON</label>
+                        <textarea id="org-json" required rows={8} className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={orgForm.orgJson} onChange={e => setOrgForm({...orgForm, orgJson: e.target.value})} />
+                    </div>
+                    <button type="submit" className="btn-submit">Compile &amp; Push Fleet</button>
+                    <div className={`feedback-message ${orgFeedback.type}`}>{orgFeedback.text}</div>
+                </form>
+
+                <div className="panel-header" style={{ marginTop: '2rem' }}>
+                    <h2>Secret Aliases</h2>
+                </div>
+                <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', margin:'0 0 0.75rem'}}>
+                  Alias references only — never paste raw API keys. Agents resolve from env / Vault.
+                </p>
+                <form onSubmit={handleSecretAliases} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="secret-aliases">Aliases JSON</label>
+                        <textarea id="secret-aliases" required rows={4} className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={secretForm.aliasesJson} onChange={e => setSecretForm({...secretForm, aliasesJson: e.target.value})} />
+                    </div>
+                    <button type="submit" className="btn-submit" style={{background: 'var(--text-secondary)'}}>Validate Aliases</button>
+                    <div className={`feedback-message ${secretFeedback.type}`}>{secretFeedback.text}</div>
                 </form>
             </div>
         </div>

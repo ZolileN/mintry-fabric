@@ -1,6 +1,6 @@
 # Phase 2 Plan — Enterprise
 
-**Status:** In progress (E0 started)  
+**Status:** Complete (E0–E5)  
 **Prerequisite:** Phase 1 `v1.0.0` production gate (closed enforce loop)  
 **Source:** [`CONTROL_PLANE_SPEC.md`](./CONTROL_PLANE_SPEC.md) §6–§11, [`ROADMAP.md`](./ROADMAP.md), ADR-003  
 **Constraint:** All workstreams must obey the [Six Architecture Principles](./ARCHITECTURE.md).
@@ -13,86 +13,66 @@ Extend Mintry from single-agent local governance to multi-agent fleets and langu
 
 ```text
 Author (Dashboard)
-        │  fleet_total + partitions {agent → share}
+        │  org tree OR fleet_total + partitions
+        │  compile inheritance → flat agent caps
         │  validate sum(shares) ≤ total
         │  for each agent: canonical ES256 sign → INSERT policy_bundles
         ▼
    Supabase control plane (immutable versions per agent)
         │  each agent polls its own agent_id (async)
+        │  sync-time: materialize OPA/nested envelopes → flat rules
         ▼
-   PolicyCache (verified local max_usd = that agent's share)
+   PolicyCache (verified local max_usd)
         │  synchronous local read only
         ▼
-   PolicyEngine.authorize()  ←── no fleet / Redis / OPA on hot path
+   PolicyEngine.authorize() / mintry-proxy  ←── no fleet / Redis / OPA CLI
 ```
-
-**Option A meaning:** Fleet-wide consistency is achieved by **static partition of the total at author time**. Each agent enforces only its slice. There is no shared atomic counter. Revisit Option B (Redis) only when a true global hard cap is required.
 
 ## Workstream map
 
-| ID | Workstream | Depends on | Principle notes |
-| --- | --- | --- | --- |
-| **E0** | Fleet Option A authoring + validation | v1.0.0 | Author centrally; enforce locally via existing caps |
-| **E1** | Agent-grouped ledger (UI) | E0 optional | Presentation only; ledger stays append-only |
-| **E2** | Org / project hierarchy (data model) | E0 | Inheritance resolves at sync time into flat caps |
-| **E3** | Go sidecar (ADR-003) | E0 | Same local authorize contract; HTTP_PROXY path — **scaffold done** |
-| **E4** | OPA bundle compile-at-sync | E2 | Never invoke OPA on hot path |
-| **E5** | Vault alias orchestration | E3 | Secrets never on Mintry servers |
+| ID | Workstream | Status |
+| --- | --- | --- |
+| **E0** | Fleet Option A authoring + validation | **Done** |
+| **E1** | Agent-grouped ledger (UI) | **Done** |
+| **E2** | Org / project hierarchy (compile → flat caps) | **Done** |
+| **E3** | Go sidecar scaffold (ADR-003) | **Done** (HTTPS MITM follow-up) |
+| **E4** | OPA bundle compile-at-sync | **Done** |
+| **E5** | Vault alias orchestration | **Done** |
 
-Recommended order: **E0 → E1 → E3 scaffold → E2 → E4/E5**.
+## E0 — Fleet Option A
 
-## E0 — Fleet Option A (this milestone)
-
-### Deliverables
-
-1. **`mintry.core.fleet`** — pure validation:
-   - `validate_partitions(total_usd, partitions) → ok | error`
-   - Rules: non-empty map; each share ≥ 0.01; `sum(shares) ≤ total_usd`
-2. **Dashboard `POST /api/fleets/partition`** (auth required):
-   - Accept `{ fleet_id, total_usd, partitions: { agent_id: share_usd } }`
-   - Validate partitions
-   - For each agent, sign & insert a policy bundle with mandate rule
-     `{ max_usd: share, fleet_id, fleet_total_usd }`
-3. **Dashboard UI** — Fleet Partition panel (author once → push N agent policies)
-4. **Tests** — partition validation edge cases; reject oversubscribe
-
-### Acceptance
-
-- Oversubscribed fleet (`sum > total`) is rejected before any insert
-- Undersubscribed fleet (`sum < total`) is accepted (unallocated headroom)
-- Each agent still enforces only local `max_usd` with zero network on authorize
-- Existing single-agent Sign & Push remains unchanged
-
-### Out of scope for E0
-
-- Redis / shared counters (Option B)
-- Cross-agent spend aggregation on the hot path
-- Sidecar binary
+See earlier deliverables: `mintry.core.fleet`, `POST /api/fleets/partition`, dashboard Fleet Partition panel.
 
 ## E1 — Agent-grouped ledger
 
-Group mandate rows by `agent_id` (default: mandate id) with rollup budget/spent/policy version. No schema migration required for the first cut.
+Dashboard groups mandates by agent with rollup budget/spent/policy version.
 
-## E3 — Go sidecar scaffold (ADR-003)
+## E2 — Org hierarchy
 
-### Deliverables
+- `mintry.core.org.compile_org_to_agent_caps` — Company → department → project → agent
+- Inheritance resolves at author time into flat `agent_id → max_usd`
+- `POST /api/orgs/compile` (+ optional fleet push)
+- Dashboard **Org Hierarchy Compile** panel
 
-1. **`apps/sidecar`** — `mintry-proxy` forward proxy on `:8820`
-2. Local SQLite authorize + spend + audit (pure Go `modernc.org/sqlite`, WAL)
-3. Intent blocklist (same phrases as Python interceptor)
-4. Alpine Dockerfile + `docker-compose` `mintry-proxy` service + k8s example
-5. Go unit tests for authorize / block-before-upstream / metering
+## E3 — Go sidecar
 
-### Honest limits (follow-ups)
+- `apps/sidecar` / `mintry-proxy` on `:8820`
+- Local SQLite authorize + meter + intent blocklist
+- Alpine Dockerfile, compose, `deploy/k8s-sidecar.yaml`
+- HTTPS CONNECT MITM remains a follow-up (`501` unless uninspected tunnel)
 
-- HTTPS `CONNECT` to LLM hosts is not MITM'd yet (501 unless uninspected tunnel flag)
-- Policy poller inside the sidecar (LKG verify) — still Python SDK for now
-- No Redis fleet counter (Option A partitions remain the multi-agent model)
+## E4 — OPA compile-at-sync (eval outcome)
 
-### Acceptance
+**Decision:** Keep the custom budget evaluator on the hot path. Use OPA-shaped bundles only as a **distribution envelope**. At policy apply/sync time, `materialize_flat_rules()` unwraps nested/OPA maps into flat `{max_usd, allow, expires_at}` for `PolicyCache`. The OPA CLI is **never** spawned from authorize.
 
-- `go test ./...` in `apps/sidecar` passes
-- Exhausted mandate returns 402 without calling upstream
-- `/healthz` reports ledger path
-- Hot path performs zero control-plane network I/O
+## E5 — Vault alias orchestration
 
+- `mintry.core.secrets` — alias validation + resolve from customer env / optional customer Vault agent
+- `POST /api/secrets/aliases` — accepts alias references only; rejects raw key payloads
+- Mintry servers never store provider API keys
+
+## Follow-ups (not blocking Phase 2 gate)
+
+- Sidecar TLS MITM for HTTPS LLM hosts
+- Sidecar built-in policy poller (today: Python SDK sync)
+- Option B Redis global hard cap (only if Option A insufficient)

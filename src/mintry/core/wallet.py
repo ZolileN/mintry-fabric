@@ -274,20 +274,20 @@ class MintryWallet:
         if mandate["status"] == "unknown":
             return False
 
-        # Phase 2: Embedded OPA Policy Check
+        # Phase 2 E4: use already-materialized flat rules only (no OPA CLI).
         if self._opa and self.policy_cache:
             active_policy = self.policy_cache.get_active_policy()
             if active_policy:
-                # Inject the hot-swapped policy into the evaluator
-                self._opa._bundle_cache = {"data": {"mintry": active_policy.mandates}}
-                # Query the specific agent's mandate policy
-                opa_result = self._opa.evaluate(f"data.mintry.mandate.{mandate_id}", {"cost": cost})
+                self._opa.set_bundle_data(
+                    getattr(self.policy_cache, "_flat_rules", None) or active_policy.mandates
+                )
+                opa_result = self._opa.evaluate(
+                    f"data.mintry.mandate.{mandate_id}", {"cost": cost}
+                )
                 if opa_result is not None:
                     if isinstance(opa_result, dict) and "max_usd" in opa_result:
-                        # Dynamically override the budget from the central policy
                         mandate["budget_usd"] = float(opa_result["max_usd"])
                     elif opa_result is False:
-                        # Policy explicitly blocks
                         self.log_decision(mandate_id, "block", cost, "Blocked by OPA policy")
                         return False
 
