@@ -7,8 +7,8 @@ This roadmap reflects the code currently present in the repository.
 
 ## Repository Status
 
-**Current release: `v1.0.0` (Phase 1 production gate).** See
-[PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md) and
+**Current release: `v1.1.0` (Phase 2 enterprise gate).** See
+[PHASE2_PLAN.md](./PHASE2_PLAN.md), [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md), and
 [CHANGELOG.md](../CHANGELOG.md).
 
 Implemented:

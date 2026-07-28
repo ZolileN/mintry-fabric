@@ -192,17 +192,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(500, "Database path not configured.")
             return
 
-        # Production: prefer central Sign & Push; local mutations need explicit opt-in.
-        local_gov = os.environ.get("MINTRY_LOCAL_GOVERNANCE", "").lower() in ("1", "true", "yes")
-        require_local = os.environ.get("MINTRY_REQUIRE_LOCAL_GOVERNANCE_FLAG", "").lower() in (
-            "1", "true", "yes",
+        # Central Sign & Push is source of truth when a control plane is configured.
+        from mintry.core.governance import (
+            local_governance_denied_message,
+            local_governance_enabled,
         )
-        if require_local and not local_gov and self.path.startswith("/api/mandates/"):
+
+        if not local_governance_enabled() and self.path.startswith("/api/mandates/"):
             self.send_json_response(
-                {
-                    "error": "Local mandate mutations disabled. "
-                    "Sign & Push a policy version, or set MINTRY_LOCAL_GOVERNANCE=1."
-                },
+                {"error": local_governance_denied_message()},
                 403,
             )
             return
@@ -361,9 +359,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "history": history,
                 "has_expiry": has_expiry,
                 "policy_sync": self._get_policy_sync_status(),
+                "governance": self._get_governance_status(),
             }
         finally:
             conn.close()
+
+    @classmethod
+    def _get_governance_status(cls) -> dict:
+        from mintry.core.governance import (
+            control_plane_configured,
+            local_governance_enabled,
+        )
+
+        return {
+            "control_plane_configured": control_plane_configured(),
+            "local_governance": local_governance_enabled(),
+            "authoring_mode": (
+                "local_ledger"
+                if local_governance_enabled() and not control_plane_configured()
+                else (
+                    "hybrid_local_opt_in"
+                    if local_governance_enabled()
+                    else "central_sign_and_push"
+                )
+            ),
+        }
 
     @classmethod
     def _get_policy_sync_status(cls) -> dict:

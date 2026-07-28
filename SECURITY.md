@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| `0.6.x` | Active development (control-plane enforce loop) |
-| `0.5.x` | Prior feature snapshot |
+| `1.1.x` | Phase 2 enterprise gate (current) |
+| `1.0.x` | Phase 1 production gate |
 | `main` / current repository state | Active development |
 
 ## Reporting a Vulnerability
@@ -49,9 +49,10 @@ The interceptor blocks request prompts containing:
 ## Current Security Limitations
 
 - the intent blocklist is still largely built-in (policy-driven allow/deny flags are supported on central mandates)
-- multi-user org RBAC is Phase 2; Phase 1 uses a shared admin token / login cookie
+- multi-user org RBAC is partial (org compile → flat caps; shared admin token, not full SSO)
 - the interceptor is a global monkey-patch, so applications must understand that enforcement is process-wide
-- multi-host shared-ledger usage still requires the sidecar roadmap
+- multi-host shared-ledger usage should use the Go sidecar scaffold (`apps/sidecar`); HTTPS MITM is not complete
+- when `MINTRY_CONTROL_PLANE_URL` is set, local mandate upsert/revoke requires `MINTRY_LOCAL_GOVERNANCE=1`
 
 ## Architectural Security
 

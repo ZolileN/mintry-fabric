@@ -1,57 +1,53 @@
 # Mintry Fabric
 
-Mintry Fabric is a Python interception layer for LLM spend governance. It hooks into `httpx`, checks mandates before requests leave the process, meters provider responses after they return, and writes budget and audit data to a local SQLite ledger.
+Python enforcement plane for LLM spend governance. Hook once with `mintry.init()`,
+author caps centrally as signed policy versions, enforce locally against a SQLite
+ledger — **no control-plane network I/O on allow/block**.
 
-The current repository state includes:
+## Supported path (production)
 
-- sync and async `httpx` interception
-- dynamic mandate routing via `X-Mintry-Mandate`
-- per-model pricing for OpenAI, Anthropic, Gemini, and Mistral
-- mandate expiry enforcement and audit logging
-- a local CLI and observability dashboard
-- webhook notifications and JSON log output
-
-## Install
-
-For local development:
-
-```bash
-uv sync --dev
-```
-
-For direct use from GitHub:
-
-```bash
-uv add git+https://github.com/ZolileN/mintry-fabric.git
-```
-
-## Quick Start
+| Layer | What |
+| --- | --- |
+| Enforcement | Python SDK (`httpx` intercept) + local SQLite WAL |
+| Control plane | Vercel dashboard + Supabase `policy_bundles` |
+| Authoring | **Sign & Push** (and Fleet/Org compile → Sign & Push) |
 
 ```python
 import mintry
 from openai import OpenAI
 
-engine = mintry.init(
-    api_key="mk_dev_example",
-    db_path="test_data/local.db",
-)
+mintry.init(api_key="mk_…", db_path="~/.mintry/vouchers.db")
 
-engine.wallet.create_mandate("research_task", 1.00)
-
-client = OpenAI(api_key="sk-example")
-response = client.chat.completions.create(
-    model="gpt-5-preview",
+client = OpenAI()
+client.chat.completions.create(
+    model="gpt-4o-mini",
     messages=[{"role": "user", "content": "Summarize these logs."}],
     extra_headers={"X-Mintry-Mandate": "research_task"},
 )
 ```
 
-If the request succeeds, Mintry will:
+Governance changes (new caps, deny, fleet partitions) are signed in the dashboard
+and applied on the next poll. Application code does not change.
 
-1. check that `research_task` still has budget
-2. block prohibited prompt patterns before flight
-3. read usage metadata from the response
-4. record the actual spend in SQLite
+## What this is not (yet)
+
+- **Go sidecar** (`apps/sidecar`) — scaffold; HTTP metering works; HTTPS MITM TBD
+- **Node SDK** (`packages/mintry-node`) — prototype / private `0.1.0`
+- **Local “Issue Mandate”** — opt-in only when a control plane is configured
+  (`MINTRY_LOCAL_GOVERNANCE=1`); otherwise caps are authored via Sign & Push
+
+## Install
+
+```bash
+uv sync --dev
+# or
+uv add git+https://github.com/ZolileN/mintry-fabric.git
+```
+
+## Architecture
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (Six Principles) and
+[docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md). Current release: **v1.1.0**.
 
 ## CLI
 
@@ -61,40 +57,14 @@ uv run mintry mandates inspect mt_task_882x
 uv run mintry dashboard --db test_data/local.db
 ```
 
-The dashboard serves a local web UI at `http://127.0.0.1:8000` by default.
-
-## Testing
-
-The repo’s tests assume the package dependencies are installed into the active environment.
+## Local dashboard
 
 ```bash
-uv sync --dev
-uv run pytest
+uv run mintry dashboard --db test_data/local.db --host 127.0.0.1 --port 8000
+cd apps/dashboard && npm run dev
+# open http://localhost:3000  (not 127.0.0.1)
 ```
-
-Useful focused runs:
-
-```bash
-uv run pytest tests/test_metering.py
-uv run pytest tests/test_observability.py
-uv run pytest tests/test_sprint3.py
-```
-
-## Key Components
-
-- `MintryWallet`: SQLite-backed mandate ledger and audit log
-- `PolicyEngine`: authorization, expiry checks, shared-mandate reuse, webhook dispatch
-- `GlobalHTTPInterceptor`: sync/async `httpx` monkey-patch and post-flight metering
-- `AP2IntentMandate`: signed mandate model with ES256 verification helpers
-
-## Architecture Guardrails
-
-All features and contributions must strictly adhere to the [Six Architecture Principles](docs/ARCHITECTURE.md). Features that violate deterministic, local-first enforcement will not be accepted.
-
-## Current Release Status
-
-The codebase implements roadmap milestones through the `v0.5.0` feature set, and the package version reflects this. See [docs/ROADMAP.md](docs/ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md) for the current state and remaining work before `v1.0.0`.
 
 ## License
 
-MIT
+See [LICENSE](LICENSE).

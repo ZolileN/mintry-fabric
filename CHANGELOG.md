@@ -4,6 +4,14 @@ All notable changes to Mintry Fabric are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [1.1.1] - 2026-07-28
+
+### Changed
+
+- Tighten promise alignment: with a control plane configured, local mandate upsert/revoke requires `MINTRY_LOCAL_GOVERNANCE=1`; Sign & Push is the default authoring path
+- Dashboard UI: Sign & Push / Fleet / Org first; local ledger edits demoted and gated
+- README / SECURITY / sidecar README honest about supported vs scaffold paths
+
 ## [1.1.0] - 2026-07-28
 
 ### Added
