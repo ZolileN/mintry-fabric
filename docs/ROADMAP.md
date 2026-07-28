@@ -62,6 +62,12 @@ The implementation currently covers the roadmap milestones through `v0.5.0`:
 
 See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
+> **Execution plan:** Gap closure and production DoD are tracked in
+> [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md) (workstreams
+> P0–P7). Several policy-plane items below have **partial code** (cache,
+> polling helpers) but are **not done** until the enforce loop and crypto
+> contract land — see [APP_ANALYSIS.md](./APP_ANALYSIS.md).
+
 ### Dashboard credibility (§10 — do first)
 
 - [ ] Remove integration-test data from prospect-visible environments
@@ -72,16 +78,20 @@ See [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) for full detail.
 
 ### Policy plane
 
-- [ ] Polling policy sync (15–30s), version number, atomic swap
-- [ ] Local last-known-good policy cache
-- [ ] Signature verification on policy payloads before apply
+- [ ] Polling policy sync (15–30s), version number, atomic swap *(partial: worker exists; not wired to interceptor)*
+- [ ] Local last-known-good policy cache *(partial: module exists; disk LKG not re-verified)*
+- [ ] Signature verification on policy payloads before apply *(broken across Next/Python contract)*
+- [ ] Interceptor enforces verified PolicyCache caps (close the loop)
 - [ ] Rollback semantics: ledger independent of policy version
 - [ ] Agent-grouped ledger view (UI layer)
 
 ### Control plane infrastructure
 
-- [ ] Vercel + Supabase (skip Turso in Phase 1)
-- [ ] Batched telemetry POST from SDK to control plane
+- [ ] Vercel + Supabase (skip Turso in Phase 1) *(partial: routes + client exist; auth missing)*
+- [ ] Dashboard / admin authentication (Supabase Auth)
+- [ ] Batched telemetry POST from SDK to control plane *(partial: batcher not started from init)*
+- [ ] Canonical ES256 sign/verify + shared env names
+- [ ] Quarantine legacy `apps/sync-api`; honest `mintry-node` maturity label
 
 ## Phase 2 — Enterprise
 
