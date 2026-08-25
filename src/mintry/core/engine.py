@@ -7,6 +7,29 @@ from datetime import datetime, timezone
 from typing import Optional, Any
 
 
+def _resolve_default_cap(explicit: Optional[float]) -> Optional[float]:
+    """Resolve the local fallback auto-enrollment cap.
+
+    Returns ``None`` when unset, which keeps the historical behaviour: an unknown
+    mandate has no budget and is blocked (Principle 5 — never fail open).
+    """
+    if explicit is not None:
+        try:
+            value = float(explicit)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    raw = os.environ.get("MINTRY_DEFAULT_MANDATE_USD")
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
 class Mandate:
     """Represents an active budget mandate for a scoped task."""
 
@@ -19,16 +42,29 @@ class Mandate:
         return f"Mandate(id={self.id!r}, task={self.task!r}, max_usd={self.max_usd})"
 
 
+# Reserved key in a signed policy bundle's mandate map. Its cap applies to any
+# agent the control plane has not been told about yet, which is what makes
+# onboarding a new agent require no dashboard visit.
+DEFAULT_MANDATE_KEY = "__default__"
+
+
 class PolicyEngine:
     # Policy sync infrastructure (dynamically attached by mintry.init())
     policy_cache: Optional[Any] = None
     control_plane: Optional[Any] = None
     telemetry_batcher: Optional[Any] = None
+    budget_watch: Optional[Any] = None
 
-    def __init__(self, wallet, webhook_url: Optional[str] = None):
+    def __init__(
+        self,
+        wallet,
+        webhook_url: Optional[str] = None,
+        default_mandate_usd: Optional[float] = None,
+    ):
         self.wallet = wallet
         self.api_key = None
         self.webhook_url = webhook_url or os.environ.get("MINTRY_WEBHOOK_URL")
+        self.default_mandate_usd = _resolve_default_cap(default_mandate_usd)
 
     def _dispatch_webhook(self, payload: dict):
         """Dispatches a webhook POST request asynchronously in a background thread."""
@@ -43,6 +79,49 @@ class PolicyEngine:
                 pass
                 
         threading.Thread(target=_send, daemon=True).start()
+
+    def _policy_rule(self, mandate_id: str) -> Optional[dict]:
+        """Look up a mandate's rule in the last verified local policy bundle."""
+        cache = getattr(self, "policy_cache", None)
+        if cache is None:
+            return None
+        if hasattr(cache, "mandate_rule"):
+            return cache.mandate_rule(mandate_id)
+        if hasattr(cache, "get_active_policy"):
+            bundle = cache.get_active_policy()
+            if bundle and isinstance(getattr(bundle, "mandates", None), dict):
+                candidate = bundle.mandates.get(mandate_id)
+                if isinstance(candidate, dict):
+                    return candidate
+        return None
+
+    def default_cap(self) -> Optional[float]:
+        """The cap applied to an agent no one has explicitly budgeted yet.
+
+        A centrally signed ``__default__`` rule wins over the locally configured
+        value, so the tenant sets this once in the dashboard rather than in every
+        deployment's environment.
+        """
+        rule = self._policy_rule(DEFAULT_MANDATE_KEY)
+        if isinstance(rule, dict) and "max_usd" in rule and rule.get("allow") is not False:
+            try:
+                value = float(rule["max_usd"])
+            except (TypeError, ValueError):
+                value = 0.0
+            if value > 0:
+                return value
+        return self.default_mandate_usd
+
+    def effective_budget(self, mandate_id: str) -> float:
+        """The cap in force for a mandate: signed policy first, local ledger second."""
+        rule = self._policy_rule(mandate_id)
+        if isinstance(rule, dict) and "max_usd" in rule:
+            try:
+                return float(rule["max_usd"])
+            except (TypeError, ValueError):
+                pass
+        mandate = self.wallet.get_mandate(mandate_id)
+        return float(mandate.get("budget_usd", 0.0) or 0.0)
 
     def authorize(self, mandate_id: str, request, deduct: bool = True):
         """
@@ -60,16 +139,7 @@ class PolicyEngine:
         policy_explicit_deny = False
 
         # Prefer centrally authored caps from the last verified local policy.
-        cache = getattr(self, "policy_cache", None)
-        rule = None
-        if cache is not None and hasattr(cache, "mandate_rule"):
-            rule = cache.mandate_rule(mandate_id)
-        elif cache is not None and hasattr(cache, "get_active_policy"):
-            bundle = cache.get_active_policy()
-            if bundle and isinstance(getattr(bundle, "mandates", None), dict):
-                candidate = bundle.mandates.get(mandate_id)
-                if isinstance(candidate, dict):
-                    rule = candidate
+        rule = self._policy_rule(mandate_id)
 
         if rule is not None:
             if rule.get("allow") is False:
@@ -77,6 +147,21 @@ class PolicyEngine:
             if "max_usd" in rule:
                 budget = float(rule["max_usd"])
             policy_expires_at = rule.get("expires_at")
+            if status == "unknown" and budget > 0 and not policy_explicit_deny:
+                # A centrally budgeted agent that has never run on this host. Mirror
+                # the signed cap into the local ledger so spend has a row to land in
+                # and the ledger reports the cap actually in force.
+                self._enroll(mandate_id, budget, "signed policy")
+                status = "active"
+        elif status == "unknown":
+            # First sighting of an agent nobody budgeted. If the tenant configured
+            # a default cap, enrol it locally at that cap and carry on; otherwise
+            # fall through to the block below.
+            enrolled = self._auto_enroll(mandate_id)
+            if enrolled is not None:
+                budget = enrolled
+                spent = 0.0
+                status = "active"
 
         # Phase 1: Expiry check (wallet expiry and/or policy expiry)
         expired = self.wallet.is_expired(mandate_id)
@@ -169,16 +254,40 @@ class PolicyEngine:
 
         return True
 
+    def _enroll(self, mandate_id: str, cap: float, source: str) -> float:
+        """Materialize a local mandate row at ``cap``.
+
+        Local ledger write only — the cache is updated in-process and the row is
+        persisted by the async writer, so this adds no network I/O and no blocking
+        disk I/O to the request path.
+        """
+        self.wallet.create_mandate(mandate_id, cap)
+        self.wallet.log_decision(
+            mandate_id, "auto_enroll", cap,
+            f"First request from this agent — enrolled at ${cap:.4f} from {source}"
+        )
+        self._dispatch_webhook({
+            "event": "mandate_auto_enrolled",
+            "mandate_id": mandate_id,
+            "budget_usd": cap,
+            "spent_usd": 0.0,
+            "source": source,
+            "headline": f"{mandate_id} started sending traffic and was capped at ${cap:,.2f}",
+        })
+        return cap
+
+    def _auto_enroll(self, mandate_id: str) -> Optional[float]:
+        """Enroll an unbudgeted agent at the configured default cap, if there is one."""
+        cap = self.default_cap()
+        if cap is None or cap <= 0:
+            return None
+        return self._enroll(mandate_id, cap, "the default cap")
+
     def get_budget_summary(self, mandate_id: str) -> dict:
         """Returns a budget summary with remaining headroom for error messages."""
         mandate = self.wallet.get_mandate(mandate_id)
-        budget = float(mandate.get("budget_usd", 0.0) or 0.0)
         spent = float(mandate.get("spent_usd", 0.0) or 0.0)
-        cache = getattr(self, "policy_cache", None)
-        if cache is not None and hasattr(cache, "mandate_rule"):
-            rule = cache.mandate_rule(mandate_id)
-            if rule and "max_usd" in rule:
-                budget = float(rule["max_usd"])
+        budget = self.effective_budget(mandate_id)
         remaining = budget - spent
         is_expired = self.wallet.is_expired(mandate_id)
         return {
@@ -209,7 +318,7 @@ class PolicyEngine:
             else:
                 # Auto-discovery fallback: create a default base mandate
                 mandate_id = task
-                max_usd = 0.05
+                max_usd = self.default_cap() or 0.05
                 self.wallet.create_mandate(mandate_id, max_usd, expires_at=expires_at)
                 is_shared = True
         else:
