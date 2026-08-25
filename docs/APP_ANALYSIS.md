@@ -1,5 +1,10 @@
 # Mintry Fabric — Application Analysis
 
+> **Updated for v1.3.0.** Many gaps from the original analysis (auto-attribution,
+> telemetry wiring, threshold alerts, dashboard UX, Stripe top-up path) are
+> addressed in v1.3.0. Remaining gaps: sidecar HTTPS MITM, Node SDK parity,
+> multi-tenant RBAC, hosted fleet UI without local Python API.
+
 Snapshot of the applications and packages in this repository against the intended
 control-plane / data-plane architecture (`docs/ARCHITECTURE.md`) and the Six
 Architecture Principles.
@@ -7,12 +12,22 @@ Architecture Principles.
 **Scope:** `apps/dashboard`, `apps/sync-api`, `packages/mintry-node`, Python core
 (`src/mintry`), plus supporting tools.
 
-**Verdict:** Local enforcement and observability are real and useful for demos.
-The control-plane loop (central author → sign → poll → verify → enforce) is
-partially implemented and not yet closed end-to-end. Treat production claims
-cautiously until the critical gaps below are closed.
+**Verdict (v1.3.0):** Local enforcement is production-grade for Python + httpx.
+The control-plane feedback loop (telemetry upload, alerts, fleet summary merge)
+is implemented. Dashboard is tenant-friendlier but still operator-oriented for
+advanced fleet/org JSON. Sidecar and Node remain scaffolds.
 
 ---
+
+## Historical note (pre-v1.3.0)
+
+The analysis below was written before the background-first release. Sections on
+"interceptor does not use PolicyCache" and "telemetry not wired" are **obsolete**
+as of v1.3.0 — see [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md).
+
+---
+
+_Original analysis (partially superseded):_
 
 ## System map
 

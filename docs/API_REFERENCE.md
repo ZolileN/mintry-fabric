@@ -1,38 +1,55 @@
 # Mintry Fabric API Reference
 
+**Release:** `v1.3.0` — see [CONFIGURATION.md](CONFIGURATION.md) for env vars.
+
 This document describes the current Python API implemented in `src/mintry`.
 
 ## Top-Level API
 
-### `mintry.init(api_key, db_path="~/.mintry/vouchers.db", webhook_url=None)`
+### `mintry.init(...)`
 
-Initialize the wallet, engine, and global HTTPX interceptor.
+Initialize the wallet, engine, policy sync, telemetry, and global HTTPX interceptor.
 
-Parameters:
+```python
+engine = mintry.init(
+    api_key="mk_…",
+    db_path="~/.mintry/vouchers.db",
+    webhook_url=None,
+    control_plane_url=None,
+    control_plane_key=None,
+    control_plane_public_key=None,
+    policy_sync_interval=20.0,
+)
+```
 
-| Name | Type | Description |
-|---|---|---|
-| `api_key` | `str | None` | Optional string. Stored on the engine instance for integration use. If not provided, falls back to `MINTRY_API_KEY` environment variable. |
-| `db_path` | `str` | SQLite ledger path. Defaults to `~/.mintry/vouchers.db`. |
-| `webhook_url` | `str | None` | Optional webhook endpoint for authorization-failure and shield-exhaustion events. |
+Returns `PolicyEngine`. Idempotent for the same `db_path`. Call `mintry.close()` to flush workers.
 
-Returns:
+Side effects when control plane configured:
 
-- `PolicyEngine`
-
-Raises:
-
-- `ValueError` if `api_key` is not provided and `MINTRY_API_KEY` environment variable is not set.
-
-Side effects:
-
-- creates the SQLite ledger if needed
-- installs sync and async HTTPX patches once per process
-- prints startup messages unless `MINTRY_JSON_LOGS=1`
+- starts `PolicySyncWorker` (async poll)
+- starts `TelemetryBatcher` (async upload to `telemetry_events`)
+- starts `DigestWorker` unless `MINTRY_DIGEST_DISABLED=1`
 
 ### `mintry.mandate(task, cap)`
 
-Top-level context manager that wraps the engine's `shield()` logic.
+Top-level context manager — **auto-attributes nested LLM calls** via ContextVar.
+
+```python
+with mintry.mandate("research_task", cap=50.0):
+    client.chat.completions.create(...)  # no X-Mintry-Mandate header needed
+```
+
+Uses `task` as the stable ledger mandate id. Creates or updates the budget row.
+
+### `mintry.close()`
+
+Stops telemetry, digest, and policy sync workers; flushes wallet; resets httpx hooks.
+
+---
+
+## Legacy reference (partial)
+
+### `mintry.init(api_key, db_path="~/.mintry/vouchers.db", webhook_url=None)`
 
 Usage:
 

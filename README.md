@@ -1,16 +1,19 @@
 # Mintry Fabric
 
 Python enforcement plane for LLM spend governance. Hook once with `mintry.init()`,
-author caps centrally as signed policy versions, enforce locally against a SQLite
-ledger — **no control-plane network I/O on allow/block**.
+set budgets centrally as signed policies, enforce locally against SQLite — **no
+control-plane network I/O on allow/block**.
+
+**Current release: `v1.3.0`** (background-first governance).
 
 ## Supported path (production)
 
 | Layer | What |
 | --- | --- |
 | Enforcement | Python SDK (`httpx` intercept) + local SQLite WAL |
-| Control plane | Vercel dashboard + Supabase `policy_bundles` |
-| Authoring | **Sign & Push** (and Fleet/Org compile → Sign & Push) |
+| Control plane | Vercel dashboard + Supabase `policy_bundles` + `telemetry_events` |
+| Authoring | Simple budget form or Sign & Push (Fleet/Org compile) |
+| Alerts | Webhook / Slack / email at 80/95/100% + optional weekly digest |
 
 ```python
 import mintry
@@ -18,23 +21,23 @@ from openai import OpenAI
 
 mintry.init(api_key="mk_…", db_path="~/.mintry/vouchers.db")
 
-client = OpenAI()
-client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "Summarize these logs."}],
-    extra_headers={"X-Mintry-Mandate": "research_task"},
-)
+with mintry.mandate("research_task", cap=50.0):
+    client = OpenAI()
+    client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Summarize these logs."}],
+    )
+    # attributed automatically — no per-request headers required
 ```
 
-Governance changes (new caps, deny, fleet partitions) are signed in the dashboard
+Governance changes (new caps, fleet partitions) are signed in the dashboard
 and applied on the next poll. Application code does not change.
 
 ## What this is not (yet)
 
 - **Go sidecar** (`apps/sidecar`) — scaffold; HTTP metering works; HTTPS MITM TBD
 - **Node SDK** (`packages/mintry-node`) — prototype / private `0.1.0`
-- **Local “Issue Mandate”** — opt-in only when a control plane is configured
-  (`MINTRY_LOCAL_GOVERNANCE=1`); otherwise caps are authored via Sign & Push
+- **Local ledger edits** — opt-in when control plane configured (`MINTRY_LOCAL_GOVERNANCE=1`)
 
 ## Install
 
@@ -47,13 +50,13 @@ uv add git+https://github.com/ZolileN/mintry-fabric.git
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (Six Principles) and
-[docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md). Current release: **v1.2.0**.
+[docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md).
 
 ## CLI
 
 ```bash
 uv run mintry mandates list
-uv run mintry mandates inspect mt_task_882x
+uv run mintry mandates inspect research_task
 uv run mintry dashboard --db test_data/local.db
 ```
 

@@ -62,6 +62,18 @@ def calculate_cost(
     return (prompt_tokens * rates["input"]) + (completion_tokens * rates["output"])
 
 
+def model_is_known(model: str) -> bool:
+    """Return True when the model has an explicit or prefix-matched pricing entry."""
+    if not model or model == "unknown":
+        return False
+    if model in _PRICING_TABLE:
+        return True
+    for known_model in sorted(_PRICING_TABLE.keys(), key=len, reverse=True):
+        if model.startswith(known_model):
+            return True
+    return False
+
+
 def get_model_rates(model: str) -> dict[str, float]:
     """
     Look up the per-token rates for a model.

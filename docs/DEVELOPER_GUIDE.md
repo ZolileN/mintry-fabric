@@ -1,134 +1,130 @@
 # Mintry Fabric: Developer Guide
 
-Mintry Fabric is a local governance layer for LLM traffic. It intercepts supported provider requests at the `httpx` transport layer and ties them to named mandates in a SQLite ledger.
+**Release:** `v1.3.0`
 
-## End-to-End Flow
+Mintry intercepts supported LLM provider traffic at the `httpx` layer, enforces
+budget caps from a local SQLite ledger, and syncs signed policies from Supabase
+in the background.
 
-### 1. Initialize the Fabric
+## Quick start
 
 ```python
 import mintry
 
-engine = mintry.init(
-    api_key="mk_dev_example",
-    db_path="test_data/local.db",
-)
-```
+mintry.init(api_key="mk_dev_example", db_path="test_data/local.db")
 
-This creates:
-
-- a `MintryWallet`
-- a `PolicyEngine`
-- a global sync and async HTTPX interceptor
-
-### 2. Create or Reuse a Mandate
-
-Explicit creation:
-
-```python
-engine.wallet.create_mandate("research_task", 2.00)
-```
-
-Scoped ephemeral mandate:
-
-```python
-with engine.shield("log-analysis", max_usd=0.50) as mandate:
+with mintry.mandate("research_task", cap=50.0):
+    # All nested LLM calls inside this block are auto-attributed
     ...
 ```
 
-Shared named mandate reuse:
+No `X-Mintry-Mandate` header is required when using `mintry.mandate()`.
+
+## Attribution order
+
+For each outbound LLM request:
+
+1. `X-Mintry-Mandate` header (explicit override)
+2. Active `mintry.mandate()` / `engine.shield()` context (ContextVar)
+3. `MINTRY_DEFAULT_MANDATE` or `MINTRY_AGENT_ID` (default `default_agent`)
+
+The default mandate is seeded at `MINTRY_DEFAULT_BUDGET_USD` (default `$50`) — not a $0.01 trap.
+
+## Mandate patterns
+
+**Named budget (recommended):**
+
+```python
+with mintry.mandate("nightly_summarizer", cap=50.0):
+    run_job()
+```
+
+**Pre-allocated dashboard budget:**
 
 ```python
 with engine.shield("research_task") as mandate:
     assert mandate.id == "research_task"
 ```
 
-### 3. Send a Request
+**Ephemeral scoped mandate:**
 
 ```python
-from openai import OpenAI
-
-client = OpenAI(api_key="sk-example")
-client.chat.completions.create(
-    model="gpt-5-preview",
-    messages=[{"role": "user", "content": "Summarize the incident."}],
-    extra_headers={"X-Mintry-Mandate": "research_task"},
-)
+with engine.shield("one-off", max_usd=0.50) as mandate:
+    ...
 ```
 
-### 4. What Mintry Does
+## What happens on each LLM call
 
-- checks expiry and budget headroom
-- rejects exhausted mandates
-- blocks a small set of prohibited prompt phrases
-- forwards the request to the provider
-- reads usage metadata from the response
-- calculates spend from the pricing table
-- updates SQLite and the audit log
+1. Resolve mandate id (header → context → default)
+2. `PolicyEngine.authorize()` — local budget + signed policy caps (no network)
+3. Intent filter (hardcoded prohibited phrases)
+4. Forward to provider
+5. Meter tokens (OpenAI, Anthropic, Gemini, Mistral shapes)
+6. Append audit log + async telemetry upload
+7. Threshold alerts at 80/95/100% via webhook/Slack/email (async)
 
-## Main Components
+## Control plane sync
 
-### `MintryWallet`
+When `MINTRY_CONTROL_PLANE_URL` and keys are set:
 
-Ledger responsibilities:
+- Policy poller fetches signed `policy_bundles` every ~20s
+- `TelemetryBatcher` uploads decisions to `telemetry_events`
+- Invalid signatures rejected; last-known-good policy kept
 
-- initialize schema
-- seed the default mandate
-- create, update, exhaust, and inspect mandates
-- write audit log entries
+## Notifications
 
-### `PolicyEngine`
+Configure async channels (never on the hot path):
 
-Policy responsibilities:
+- `MINTRY_WEBHOOK_URL` — generic JSON
+- `MINTRY_SLACK_WEBHOOK_URL` — Slack incoming webhook
+- `MINTRY_RESEND_API_KEY` + `MINTRY_ALERT_EMAIL_TO` — email via Resend
+- Weekly digest: `MINTRY_DIGEST_INTERVAL_SEC` (default 7 days)
 
-- expiry enforcement
-- budget authorization
-- webhook dispatch
-- shared versus ephemeral shield behaviour
+## Dashboard
 
-### `GlobalHTTPInterceptor`
+```bash
+uv run mintry dashboard --db test_data/local.db --host 127.0.0.1 --port 8000
+cd apps/dashboard && npm run dev
+```
 
-Transport responsibilities:
+Open **http://localhost:3000**. The UI includes:
 
-- patch sync and async HTTPX clients
-- detect supported LLM hosts
-- resolve mandate IDs from headers
-- run pre-flight policy checks
-- meter successful responses
+- Spend overview + activity feed
+- Simple budget form (agent + monthly cap)
+- Proactive alerts panel + test button
+- Policy sync status (local mode guidance)
+- Advanced JSON editors (fleet, org, secrets)
 
-## Supported Providers
+## Stripe top-up
 
-- OpenAI
-- Anthropic
-- Google Gemini
-- Mistral
+Point Stripe `checkout.session.completed` to `POST /api/stripe/webhook` on the
+dashboard. Set `metadata.mandate_id` on the Checkout Session. Verified events
+call `POST /api/topup` on the Python API to increase `max_usd`.
 
-Support is host-based and depends on those SDKs or clients ultimately using `httpx`.
+## Supported providers
 
-## Dashboard Workflow
+Host-based interception for:
 
-The local dashboard and the SDK can point at the same SQLite file.
+- `api.openai.com`
+- `api.anthropic.com`
+- `generativelanguage.googleapis.com`
+- `api.mistral.ai`
 
-Typical flow:
+Requires the client to use `httpx` (OpenAI SDK default).
 
-1. start the dashboard with `mintry dashboard --db test_data/local.db`
-2. allocate or revoke mandates from the browser
-3. run an SDK script against the same `--db` path
-4. watch spend and audit updates appear in the dashboard
+## Design constraints
 
-## Design Constraints
+- [Six Architecture Principles](ARCHITECTURE.md) — no network on authorize
+- Process-wide httpx monkey-patch
+- Local SQLite ledger per agent process
+- Go sidecar (`mintry-proxy`) scaffold for non-Python stacks
 
-- **Adherence to the [Six Architecture Principles](ARCHITECTURE.md) is mandatory for all development.**
-- the interceptor is a process-wide monkey-patch
-- the ledger is local SQLite, not a hosted control plane
-- multi-process and network-shared deployments are not yet a packaged product path
-- webhook support exists, but remote sync is still only represented by local hooks and integration points
-- **Zero latency**: the enforcement plane (local SQLite) must operate synchronously without adding network hops to the critical path.
-
-## Recommended Development Loop
+## Development loop
 
 ```bash
 uv sync --dev
 uv run pytest
 uv run mintry dashboard --db test_data/local.db
 ```
+
+See [CONFIGURATION.md](CONFIGURATION.md) for all environment variables.

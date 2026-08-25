@@ -7,17 +7,20 @@ This roadmap reflects the code currently present in the repository.
 
 ## Repository Status
 
-**Current release: `v1.2.0`** (Supabase Auth UI + Phase 2 enterprise gate).
+**Current release: `v1.3.0`** (background-first governance — auto-attribution, alerts, telemetry, simpler dashboard).
 
 See [PHASE2_PLAN.md](./PHASE2_PLAN.md), [PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md),
-[RELEASE_NOTES_v1.1.0.md](./RELEASE_NOTES_v1.1.0.md), and [CHANGELOG.md](../CHANGELOG.md).
+[RELEASE_NOTES_v1.3.0.md](./RELEASE_NOTES_v1.3.0.md), and [CHANGELOG.md](../CHANGELOG.md).
 
 ### Supported product path
 
 | Layer | Status |
 | --- | --- |
 | Python SDK + local SQLite WAL | **Supported** — enforce locally, zero CP I/O on allow/block |
-| Dashboard Sign & Push → Supabase | **Supported** — central authoring source of truth |
+| Dashboard Sign & Push → Supabase | **Supported** — simple budget form + advanced JSON |
+| Fleet telemetry ingest | **Supported** — `telemetry_events` batch upload + dashboard merge |
+| Proactive alerts | **Supported** — webhook/Slack/email thresholds + weekly digest |
+| Stripe top-up webhook | **Supported** — `POST /api/stripe/webhook` → ledger top-up |
 | Fleet Option A / Org compile → flat caps | **Supported** — compiled before the hot path |
 | Go `mintry-proxy` sidecar | **Scaffold** — HTTP metering works; HTTPS MITM TBD |
 | Node SDK (`mintry-node`) | **Prototype** — private `0.1.0` |
@@ -72,16 +75,30 @@ See [PHASE2_PLAN.md](./PHASE2_PLAN.md).
 - [x] Local ledger mutations opt-in (`MINTRY_LOCAL_GOVERNANCE`)
 - [x] Dashboard authoring UX reordered; docs honesty pass
 
-## Next (post–Phase 2)
+### v1.3.0 — Background-first governance (2026-08-25)
+
+- [x] ContextVar auto-attribution from `mintry.mandate()` (no per-request headers)
+- [x] Sane default mandate (`default_agent`, configurable budget)
+- [x] Telemetry wired from enforcement path to `telemetry_events`
+- [x] Anthropic token metering + unknown-model warnings
+- [x] Threshold alerts (80/95/100%) via webhook/Slack/email
+- [x] Weekly spend digest worker
+- [x] Dashboard: simple budget form, onboarding, terminology, local-mode UX
+- [x] Fleet telemetry merge in dashboard summary API
+- [x] Stripe checkout webhook → `/api/topup`
+- [x] Sidecar default mandate → `default_agent`
+
+## Next (post–v1.3.0)
 
 Ordered by leverage for the stated promise ("init once / author centrally / enforce locally / any language"):
 
 1. **Sidecar HTTPS MITM** — inspect/meter TLS LLM traffic through `HTTP(S)_PROXY` without uninspected tunnels
 2. **Sidecar policy poller** — same verify → LKG → flat-cap loop as the Python SDK (today Python syncs; sidecar reads ledger)
 3. ~~**Full Supabase Auth UI**~~ — done in `v1.2.0` (email/password + magic link; admin token break-glass)
-4. **Configurable intent blocklists** — move built-in phrases into signed policy (still deterministic allow/block)
+4. ~~**Configurable intent blocklists**~~ — partial (hardcoded list; signed policy follow-up)
 5. **Option B fleet hard cap** — Redis/Upstash atomic counter only if Option A partitions prove insufficient
 6. **Org RBAC / profiles table** — map authenticated users to agent allowlists beyond email allowlist env
+7. ~~**Automated Stripe-triggered top-ups**~~ — webhook path shipped in v1.3.0; self-serve Checkout UI follow-up
 
 ## Explicitly Deferred
 
@@ -95,7 +112,7 @@ From [CONTROL_PLANE_SPEC.md](./CONTROL_PLANE_SPEC.md) §8 — do not pull onto t
 
 - Shared ledger mode beyond a single local SQLite file (per-pod emptyDir + Option A remains preferred)
 - VS Code spend visibility
-- Automated Stripe-triggered top-ups (control plane only; never on authorize)
+- Automated Stripe-triggered top-ups — **webhook shipped v1.3.0**; hosted Checkout UI optional
 - Publishable Node SDK subset once it matches Python’s closed enforce loop
 
 ## Notes

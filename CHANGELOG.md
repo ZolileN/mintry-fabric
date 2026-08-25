@@ -6,9 +6,26 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) 
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-25
+
+### Added
+
+- ContextVar auto-attribution from `mintry.mandate()` — nested LLM calls need no manual headers
+- Stable task ids for top-level `mintry.mandate()`; sane `default_agent` seed budget
+- `TelemetryBatcher` wired from authorize and metering paths
+- Anthropic `input_tokens`/`output_tokens` metering; unknown-model warnings
+- Async threshold alerts (80/95/100%) via webhook, Slack, and Resend email
+- Weekly spend digest worker (`DigestWorker`)
+- Dashboard simple budget form, onboarding empty state, alerts panel
+- Supabase `telemetry_events` merge in dashboard summary API
+- Stripe webhook (`/api/stripe/webhook`) → Python `/api/topup`
+- `POST /api/topup`, `/api/alerts/test`, `/api/notifications/settings` on Python API
+
 ### Changed
 
-- Rewrote `docs/DEPLOYMENT.md` as the production guide for Vercel + Supabase + Python agents
+- Dashboard terminology and section order; local-mode sync status UX
+- Sidecar default mandate → `default_agent`
+- Docs rewritten for v1.3.0 (`CONFIGURATION.md`, `DEVELOPER_GUIDE.md`, `README.md`)
 
 ## [1.2.0] - 2026-07-28
 
