@@ -11,6 +11,9 @@ from typing import ClassVar, Optional
 
 from concurrent.futures import ThreadPoolExecutor
 
+from mintry.core.attention import build_attention
+
+
 class ThreadPoolHTTPServer(HTTPServer):
     """Multi-threaded HTTP server using a fixed size thread pool to prevent thread/GIL thrashing."""
     request_queue_size = 65536  # Increase TCP backlog to handle massive concurrent VUs
@@ -343,6 +346,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 4,
             )
             
+            policy_sync = self._get_policy_sync_status()
+
+            try:
+                notices = [
+                    n for n in wallet.list_budget_notices(limit=25)
+                    if n["mandate_id"] in visible_ids or not _should_hide_test_mandates()
+                ]
+            except Exception:
+                notices = []
+
             return {
                 "stats": {
                     "total_mandates": total_mandates,
@@ -358,8 +371,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "mandates": mandates,
                 "history": history,
                 "has_expiry": has_expiry,
-                "policy_sync": self._get_policy_sync_status(),
+                "policy_sync": policy_sync,
                 "governance": self._get_governance_status(),
+                "attention": build_attention(mandates, policy_sync),
+                "budget_notices": notices,
             }
         finally:
             conn.close()
