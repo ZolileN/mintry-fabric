@@ -1,7 +1,7 @@
 import sqlite3
 import threading
 import queue
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -128,6 +128,24 @@ class MintryWallet:
             )
         """)
 
+        # Append-only record of proactive budget notices already delivered, so a
+        # process restart does not re-notify a tenant about the same crossing.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS budget_notices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                mandate_id TEXT NOT NULL,
+                threshold REAL NOT NULL,
+                budget_usd REAL NOT NULL,
+                spent_usd REAL NOT NULL,
+                projected_exhaustion_at TEXT DEFAULT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_budget_notices_mandate
+            ON budget_notices (mandate_id)
+        """)
+
         default_id = resolve_default_mandate_id()
         default_budget = resolve_default_budget_usd()
         # Sane default mandate (agent id) — avoids silent $0.01 trap on unattributed traffic.
@@ -184,7 +202,15 @@ class MintryWallet:
                     with conn:
                         for action, args in batch:
                             if action == "record_usage":
-                                mandate_id, actual_cost = args
+                                mandate_id, actual_cost, ceiling = args
+                                # A mandate can be authorized purely from a signed
+                                # policy cap with no local row yet. Materialize the
+                                # row so the spend lands somewhere durable instead
+                                # of updating zero rows and vanishing on restart.
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) VALUES (?, ?, 0.0, 'active')",
+                                    (mandate_id, ceiling)
+                                )
                                 conn.execute(
                                     "UPDATE mandates SET spent_usd = spent_usd + ? WHERE id = ?", 
                                     (actual_cost, mandate_id)
@@ -255,6 +281,27 @@ class MintryWallet:
                                 conn.execute(
                                     "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
                                     (mandate_id, decision_action, amount, details)
+                                )
+                            elif action == "record_budget_notice":
+                                (
+                                    mandate_id,
+                                    threshold,
+                                    budget_usd,
+                                    spent_usd,
+                                    projected_exhaustion_at,
+                                ) = args
+                                conn.execute(
+                                    "INSERT INTO budget_notices (mandate_id, threshold, budget_usd, spent_usd, projected_exhaustion_at) VALUES (?, ?, ?, ?, ?)",
+                                    (mandate_id, threshold, budget_usd, spent_usd, projected_exhaustion_at)
+                                )
+                                conn.execute(
+                                    "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
+                                    (
+                                        mandate_id,
+                                        "notice",
+                                        spent_usd,
+                                        f"Budget notice sent at {threshold * 100:.0f}% of ${budget_usd:.4f}",
+                                    )
                                 )
                 except Exception as e:
                     print(f"[BG_WRITER_ERROR] {e}")
@@ -383,8 +430,9 @@ class MintryWallet:
                 self._spent_cache[mandate_id] += cost
             else:
                 self._spent_cache[mandate_id] = cost
+            ceiling = float(self._max_cache.get(mandate_id, 0.0) or 0.0)
 
-        self._write_queue.put(("record_usage", (mandate_id, cost)))
+        self._write_queue.put(("record_usage", (mandate_id, cost, ceiling)))
 
     def try_reserve(self, mandate_id: str, amount: float, budget_usd: float) -> bool:
         """Atomically reserve headroom against spent+reserved for concurrent safety."""
@@ -408,6 +456,84 @@ class MintryWallet:
     def log_decision(self, mandate_id: str, action: str, amount: float = 0.0, details: str = ""):
         """Append an enforcement decision (allow/block/throttle) to the audit log."""
         self._write_queue.put(("log_decision", (mandate_id, action, float(amount), details)))
+
+    def record_budget_notice(
+        self,
+        mandate_id: str,
+        threshold: float,
+        budget_usd: float,
+        spent_usd: float,
+        projected_exhaustion_at: Optional[str] = None,
+    ) -> None:
+        """Append a delivered budget notice. Never mutates an existing row."""
+        self._write_queue.put((
+            "record_budget_notice",
+            (
+                mandate_id,
+                float(threshold),
+                float(budget_usd),
+                float(spent_usd),
+                projected_exhaustion_at,
+            ),
+        ))
+
+    def delivered_budget_notices(self) -> list[tuple[str, float, float]]:
+        """Return ``(mandate_id, threshold, budget_usd)`` for every notice sent."""
+        self.flush()
+        conn = sqlite3.connect(self.path, isolation_level=None)
+        try:
+            rows = conn.execute(
+                "SELECT mandate_id, threshold, budget_usd FROM budget_notices"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [(r[0], float(r[1]), float(r[2])) for r in rows]
+
+    def list_budget_notices(self, limit: int = 25) -> list[dict]:
+        """Most recent budget notices, newest first (for dashboard surfaces)."""
+        self.flush()
+        conn = sqlite3.connect(self.path, isolation_level=None)
+        try:
+            rows = conn.execute(
+                "SELECT timestamp, mandate_id, threshold, budget_usd, spent_usd, "
+                "projected_exhaustion_at FROM budget_notices ORDER BY id DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [
+            {
+                "timestamp": r[0],
+                "mandate_id": r[1],
+                "threshold": float(r[2]),
+                "budget_usd": float(r[3]),
+                "spent_usd": float(r[4]),
+                "projected_exhaustion_at": r[5],
+            }
+            for r in rows
+        ]
+
+    def spend_in_window(self, mandate_id: str, hours: float) -> float:
+        """Total metered spend for a mandate over the trailing ``hours``.
+
+        Used only by the analytics/forecast layer, never by the enforcement path.
+        """
+        self.flush()
+        # Match the millisecond precision SQLite writes, so the window boundary
+        # does not silently widen by up to a second.
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=float(hours))
+        ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        conn = sqlite3.connect(self.path, isolation_level=None)
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0.0) FROM mandate_audit_log "
+                "WHERE mandate_id = ? AND action = 'spend' AND timestamp >= ?",
+                (mandate_id, cutoff),
+            ).fetchone()
+        finally:
+            conn.close()
+        return float(row[0] or 0.0) if row else 0.0
 
     def get_spent(self, mandate_id):
         """Retrieve spent amount from cache."""

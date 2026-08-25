@@ -9,7 +9,7 @@ import httpx
 import mintry
 from mintry.interceptors.global_http import GlobalHTTPInterceptor, _extract_tokens
 from mintry.core.mandate_context import resolve_default_mandate_id, resolve_default_budget_usd
-from mintry.core.alert_monitor import BudgetAlertMonitor
+from mintry.core.notifications import BudgetWatch
 
 
 @pytest.fixture(autouse=True)
@@ -96,16 +96,16 @@ def test_budget_threshold_alert_once(tmp_path):
     db = str(tmp_path / "vouchers.db")
     fabric = mintry.init(api_key="test_key_2026", db_path=db)
     fabric.wallet.create_mandate("alert_agent", 10.0)
+    fabric.wallet.record_usage("alert_agent", 8.5)
 
     payloads = []
-    fabric._dispatch_webhook = lambda p: payloads.append(p)
-    monitor = BudgetAlertMonitor(fabric)
+    watch = BudgetWatch(fabric.wallet, thresholds=[0.8], dispatch=payloads.append)
+    watch.evaluate("alert_agent", budget_usd=10.0)
+    watch.evaluate("alert_agent", budget_usd=10.0)
 
-    monitor._check("alert_agent", 10.0, 8.5)
-    monitor._check("alert_agent", 10.0, 8.6)
-    threshold_events = [p for p in payloads if p.get("event") == "budget_threshold"]
+    threshold_events = [p for p in payloads if p.get("event") == "budget_threshold_crossed"]
     assert len(threshold_events) == 1
-    assert threshold_events[0]["threshold_pct"] == 80
+    assert threshold_events[0]["threshold"] == 0.8
 
 
 def test_mintry_mandate_uses_stable_task_id(tmp_path):

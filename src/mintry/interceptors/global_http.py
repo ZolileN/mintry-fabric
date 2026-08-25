@@ -111,10 +111,11 @@ def _process_metering_task(engine, request_info, response_bytes):
             actual_cost,
             f"Metered {prompt_tokens}+{completion_tokens} tokens ({model})",
         )
+    _telemetry.record_proxy_cost(actual_cost)
     after_spend = getattr(engine, "_after_spend_update", None)
     if after_spend:
         after_spend(mandate_id)
-    _telemetry.record_proxy_cost(actual_cost)
+
 
 # List of known LLM API host patterns
 _LLM_HOSTS = [
