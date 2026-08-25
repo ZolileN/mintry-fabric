@@ -75,9 +75,12 @@ def test_auto_init_on_mandate(tmp_path, monkeypatch):
             self.db_path = db_path
     
     class MockEngine:
-        def __init__(self, wallet, webhook_url=None):
+        def __init__(self, wallet, webhook_url=None, default_mandate_usd=None):
             self.api_key = None
             self.wallet = wallet
+            self.default_mandate_usd = default_mandate_usd
+        def _dispatch_webhook(self, payload):
+            pass
         def shield(self, task, max_usd):
             return (task, max_usd)
             
