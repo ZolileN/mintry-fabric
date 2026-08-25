@@ -16,9 +16,11 @@ from mintry.core.control_plane import SupabaseControlPlaneClient
 from mintry.core.crypto import verify_policy_bundle_signature, normalize_pem
 from mintry.core.exceptions import MintryMandateExceeded
 from mintry.core.telemetry_batch import TelemetryBatcher
+from mintry.core.digest_worker import DigestWorker
+from mintry.core.notifications import NotificationDispatcher
 from mintry import telemetry as _telemetry
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 __all__ = [
     "init",
@@ -175,6 +177,14 @@ def init(
         telemetry_batcher.start()
     engine.telemetry_batcher = telemetry_batcher
 
+    # Optional digest notifications (async; MINTRY_DIGEST_DISABLED=1 to skip)
+    digest_worker = None
+    if os.environ.get("MINTRY_DIGEST_DISABLED", "").lower() not in ("1", "true", "yes"):
+        digest_interval = float(os.environ.get("MINTRY_DIGEST_INTERVAL_SEC", "604800"))
+        digest_worker = DigestWorker(wallet, NotificationDispatcher(), interval_sec=digest_interval)
+        digest_worker.start()
+    engine.digest_worker = digest_worker
+
     # Install the global hooks
     interceptor.install()
 
@@ -199,6 +209,9 @@ def close() -> None:
     batcher = getattr(_global_engine, "telemetry_batcher", None)
     if batcher is not None:
         batcher.stop()
+    digest = getattr(_global_engine, "digest_worker", None)
+    if digest is not None:
+        digest.stop()
     worker = getattr(_global_engine, "policy_sync_worker", None)
     if worker is not None:
         worker.stop()

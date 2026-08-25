@@ -193,6 +193,11 @@ export default function Dashboard() {
     aliasesJson: '[\n  {"alias": "OPENAI_PROD_KEY", "provider": "openai"}\n]',
   });
   const [secretFeedback, setSecretFeedback] = useState({ text: '', type: '' });
+  const [notificationSettings, setNotificationSettings] = useState<{
+    channels?: { webhook?: boolean; slack?: boolean; email?: boolean };
+    digest_enabled?: boolean;
+  } | null>(null);
+  const [alertTestFeedback, setAlertTestFeedback] = useState({ text: '', type: '' });
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -207,7 +212,13 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/summary')
+    fetch('/api/notifications/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j) setNotificationSettings(j); })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
       .then(res => res.ok ? res.json() : Promise.reject('Not OK'))
       .then(json => setData(json))
       .catch(err => console.error("Dashboard API sync failed:", err));
@@ -215,6 +226,23 @@ export default function Dashboard() {
     const interval = setInterval(fetchSummary, 5000);
     return () => clearInterval(interval);
   }, [fetchSummary]);
+
+  const handleTestAlert = async () => {
+    try {
+      const res = await fetch('/api/alerts/test', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Test failed');
+      setAlertTestFeedback({
+        text: `Test sent via: ${Object.entries(json.channels || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none configured'}`,
+        type: 'success',
+      });
+    } catch (err: unknown) {
+      setAlertTestFeedback({
+        text: err instanceof Error ? err.message : String(err),
+        type: 'error',
+      });
+    }
+  };
 
   const handleUpsert = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -622,7 +650,41 @@ with mintry.mandate("my_agent", cap=50.0):
             </div>
         </div>
 
-        <div className="section-label mint">{"// 02 — Activity feed"}</div>
+        <div className="section-label mint">{"// 02 — Alerts (background)"}</div>
+        <div className="bento-grid" style={{ marginBottom: '1.5rem' }}>
+          <div className="bento-card col-12">
+            <div className="panel-header">
+              <h2>Proactive alerts</h2>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                {notificationSettings?.digest_enabled ? 'weekly digest on' : 'digest off'}
+              </span>
+            </div>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)', margin: '0 0 0.75rem' }}>
+              Threshold alerts fire at 80%, 95%, and 100% utilization via webhook, Slack, or email — configured in env, not in the dashboard UI.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                Webhook: {notificationSettings?.channels?.webhook ? '✓' : '—'}
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                Slack: {notificationSettings?.channels?.slack ? '✓' : '—'}
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                Email: {notificationSettings?.channels?.email ? '✓' : '—'}
+              </span>
+              <button type="button" className="btn" onClick={handleTestAlert} style={{ fontSize: '11px' }}>
+                Send test alert
+              </button>
+            </div>
+            {alertTestFeedback.text && (
+              <div className={`feedback-message ${alertTestFeedback.type}`} style={{ marginTop: '0.75rem' }}>
+                {alertTestFeedback.text}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="section-label mint">{"// 03 — Activity feed"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-12">
@@ -653,7 +715,7 @@ with mintry.mandate("my_agent", cap=50.0):
             </div>
         </div>
 
-        <div className="section-label">{"// 03 — Spend charts"}</div>
+        <div className="section-label">{"// 04 — Spend charts"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-8">
@@ -697,7 +759,7 @@ with mintry.mandate("my_agent", cap=50.0):
         </div>
 
         {/* 04 — Sync status */}
-        <div className="section-label mint">{"// 04 — Policy sync"}</div>
+        <div className="section-label mint">{"// 05 — Policy sync"}</div>
         <div className="bento-grid" style={{marginBottom: '1.5rem'}}>
           <div className="bento-card col-12">
             <div className="panel-header">
@@ -753,7 +815,7 @@ with mintry.mandate("my_agent", cap=50.0):
           </div>
         </div>
 
-        <div className="section-label">{"// 05 — Agents & budgets"}</div>
+        <div className="section-label">{"// 06 — Agents & budgets"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-8">

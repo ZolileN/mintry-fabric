@@ -6,6 +6,8 @@ import logging
 import threading
 from typing import Any, Dict, Optional, Set, Tuple
 
+from mintry.core.notifications import NotificationDispatcher
+
 logger = logging.getLogger(__name__)
 
 # Utilization thresholds (percent) that trigger one-shot webhook alerts per mandate.
@@ -24,6 +26,7 @@ class BudgetAlertMonitor:
         self._thresholds = thresholds
         self._fired: Set[Tuple[str, int]] = set()
         self._lock = threading.Lock()
+        self._notifications = NotificationDispatcher()
 
     def check_async(self, mandate_id: str, budget_usd: float, spent_usd: float) -> None:
         """Schedule a utilization check on a background thread."""
@@ -58,6 +61,7 @@ class BudgetAlertMonitor:
             dispatch = getattr(self._engine, "_dispatch_webhook", None)
             if dispatch:
                 dispatch(payload)
+            self._notifications.dispatch_async(payload)
             logger.info(
                 "Budget threshold alert: %s at %d%% (spent=%.4f budget=%.4f)",
                 mandate_id,
