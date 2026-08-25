@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
+from mintry.core.mandate_context import resolve_default_budget_usd, resolve_default_mandate_id
 from mintry.core.opa import OPABundleEvaluator
 
 
@@ -145,19 +146,38 @@ class MintryWallet:
             ON budget_notices (mandate_id)
         """)
 
-        # Explicitly name the columns so we don't hit the 4-column vs 3-value error
-        conn.execute("""
-            INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status) 
-            VALUES ('customer_support_agent', 0.01, 0.0, 'active')
-        """)
+        default_id = resolve_default_mandate_id()
+        default_budget = resolve_default_budget_usd()
+        # Sane default mandate (agent id) — avoids silent $0.01 trap on unattributed traffic.
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status)
+            VALUES (?, ?, 0.0, 'active')
+            """,
+            (default_id, default_budget),
+        )
+        # Legacy seed id kept for backward compatibility with older docs/tests.
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO mandates (id, max_usd, spent_usd, status)
+            VALUES ('customer_support_agent', ?, 0.0, 'active')
+            """,
+            (default_budget,),
+        )
 
-        # Seed audit log for the default mandate if not present
-        cursor = conn.execute("SELECT COUNT(*) FROM mandate_audit_log WHERE mandate_id = 'customer_support_agent'")
-        if cursor.fetchone()[0] == 0:
-            conn.execute(
-                "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
-                ("customer_support_agent", "create", 0.01, "Seed mandate initialized")
+        for seed_id, seed_budget in (
+            (default_id, default_budget),
+            ("customer_support_agent", default_budget),
+        ):
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM mandate_audit_log WHERE mandate_id = ?",
+                (seed_id,),
             )
+            if cursor.fetchone()[0] == 0:
+                conn.execute(
+                    "INSERT INTO mandate_audit_log (mandate_id, action, amount, details) VALUES (?, ?, ?, ?)",
+                    (seed_id, "create", seed_budget, "Default budget initialized"),
+                )
 
     def _bg_writer(self):
         """Asynchronous DB writer that batches updates to avoid SQLite lock contention."""

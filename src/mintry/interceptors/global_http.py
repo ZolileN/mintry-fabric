@@ -7,8 +7,9 @@ import queue
 import threading
 from datetime import datetime, timezone
 
-from mintry.core.pricing import calculate_cost
+from mintry.core.pricing import calculate_cost, model_is_known
 from mintry.core.exceptions import MintryMandateExceeded
+from mintry.core.mandate_context import resolve_mandate_id_from_request
 from mintry import telemetry as _telemetry
 
 _METERING_QUEUE = queue.Queue()
@@ -72,30 +73,49 @@ def _process_metering_task(engine, request_info, response_bytes):
 
     model = data.get("model") or _extract_model_from_info(request_info)
     prompt_tokens, completion_tokens = _extract_tokens(data)
+
+    if not model_is_known(model):
+        _print_log(
+            "unknown_model_pricing",
+            model=model,
+            mandate_id=request_info.get("mandate_id"),
+            url=request_info.get("url"),
+        )
+        engine.wallet.log_decision(
+            request_info["mandate_id"],
+            "meter_warning",
+            0.0,
+            f"Unknown model '{model}' — using default pricing rates",
+        )
+        record_telemetry = getattr(engine, "_record_telemetry", None)
+        if record_telemetry:
+            record_telemetry(
+                request_info["mandate_id"],
+                "meter_warning",
+                0.0,
+                f"Unknown model '{model}' — using default pricing rates",
+            )
+
     actual_cost = calculate_cost(model, prompt_tokens, completion_tokens)
     mandate_id = request_info["mandate_id"]
     engine.wallet.record_usage(mandate_id, actual_cost)
+    engine.wallet.log_decision(
+        mandate_id, "spend", actual_cost,
+        f"Metered {prompt_tokens}+{completion_tokens} tokens ({model})",
+    )
+    record_telemetry = getattr(engine, "_record_telemetry", None)
+    if record_telemetry:
+        record_telemetry(
+            mandate_id,
+            "spend",
+            actual_cost,
+            f"Metered {prompt_tokens}+{completion_tokens} tokens ({model})",
+        )
     _telemetry.record_proxy_cost(actual_cost)
-    _evaluate_budget_notices(engine, mandate_id)
+    after_spend = getattr(engine, "_after_spend_update", None)
+    if after_spend:
+        after_spend(mandate_id)
 
-
-def _evaluate_budget_notices(engine, mandate_id):
-    """Check the freshly updated mandate for a threshold crossing.
-
-    Runs on the metering worker, after the response has already been returned to
-    the caller, so a notice never delays a request.
-    """
-    watch = getattr(engine, "budget_watch", None)
-    if watch is None:
-        return
-    try:
-        budget = engine.effective_budget(mandate_id)
-    except Exception:
-        budget = None
-    try:
-        watch.evaluate(mandate_id, budget_usd=budget)
-    except Exception:
-        pass
 
 # List of known LLM API host patterns
 _LLM_HOSTS = [
@@ -139,15 +159,17 @@ def _extract_model(request: httpx.Request) -> str:
 
 
 def _extract_tokens(data: dict) -> tuple[int, int]:
-    """Extract input and output tokens supporting standard (OpenAI/Anthropic/Mistral) and Gemini formats."""
+    """Extract input/output tokens (OpenAI, Anthropic, Gemini, Mistral shapes)."""
     usage = data.get("usage")
     if isinstance(usage, dict):
-        return usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
-    
+        prompt = usage.get("prompt_tokens", usage.get("input_tokens", 0))
+        completion = usage.get("completion_tokens", usage.get("output_tokens", 0))
+        return int(prompt or 0), int(completion or 0)
+
     usage_metadata = data.get("usageMetadata")
     if isinstance(usage_metadata, dict):
         return usage_metadata.get("promptTokenCount", 0), usage_metadata.get("candidatesTokenCount", 0)
-        
+
     return 0, 0
 
 
@@ -189,8 +211,8 @@ class GlobalHTTPInterceptor:
             pass
 
     def _get_mandate_id(self, request: httpx.Request) -> str:
-        """Extract mandate ID from request headers, falling back to the seed mandate."""
-        return request.headers.get("x-mintry-mandate", "customer_support_agent")
+        """Header → context mandate → sane default (never a silent $0.01 trap)."""
+        return resolve_mandate_id_from_request(request)
 
     def _raise_budget_error(self, engine, mandate_id: str):
         """Raise a MintryMandateExceeded with budget details."""
@@ -250,7 +272,7 @@ class GlobalHTTPInterceptor:
                     span.set_attribute("http.url", url_str)
 
                 if is_llm:
-                    mandate_id = request.headers.get("x-mintry-mandate", "customer_support_agent")
+                    mandate_id = interceptor._get_mandate_id(request)
 
                     if span.is_recording():
                         span.set_attribute("mintry.mandate_id", mandate_id)
@@ -318,7 +340,7 @@ class GlobalHTTPInterceptor:
                     span.set_attribute("http.url", url_str)
 
                 if is_llm:
-                    mandate_id = request.headers.get("x-mintry-mandate", "customer_support_agent")
+                    mandate_id = interceptor._get_mandate_id(request)
 
                     if span.is_recording():
                         span.set_attribute("mintry.mandate_id", mandate_id)

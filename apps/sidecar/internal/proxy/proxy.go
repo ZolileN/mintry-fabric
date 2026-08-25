@@ -52,7 +52,7 @@ func New(cfg Config, l *ledger.Ledger) *Server {
 		cfg.Addr = "127.0.0.1:8820"
 	}
 	if cfg.DefaultMandate == "" {
-		cfg.DefaultMandate = "customer_support_agent"
+		cfg.DefaultMandate = "default_agent"
 	}
 	return &Server{
 		cfg:    cfg,

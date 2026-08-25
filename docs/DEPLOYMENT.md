@@ -161,6 +161,33 @@ The hosted Vercel UI authors **policies in Supabase**. Live spend KPIs need a re
 
 If no Python API is deployed, Sign & Push / Fleet / Org still work against Supabase; summary KPIs fall back / stay empty until an API origin is set.
 
+#### Optional — proactive alerts (async, off agent hot path)
+
+| Variable | Notes |
+| --- | --- |
+| `MINTRY_WEBHOOK_URL` | JSON webhook for threshold + digest events |
+| `MINTRY_SLACK_WEBHOOK_URL` | Slack incoming webhook |
+| `MINTRY_RESEND_API_KEY` | Resend API key for email alerts |
+| `MINTRY_ALERT_EMAIL_TO` | Alert recipient |
+| `MINTRY_ALERT_EMAIL_FROM` | Sender address (Resend-verified domain) |
+| `MINTRY_DIGEST_INTERVAL_SEC` | Weekly digest interval (default `604800`) |
+
+Agents fire threshold webhooks at 80/95/100% utilization. Dashboard **Send test alert** calls the same channels.
+
+#### Optional — Stripe budget top-up
+
+| Variable | Notes |
+| --- | --- |
+| `STRIPE_WEBHOOK_SECRET` | Verify signatures on `POST /api/stripe/webhook` |
+
+In Stripe Dashboard → Webhooks → add endpoint:
+
+`https://<your-vercel-domain>/api/stripe/webhook`
+
+Event: `checkout.session.completed`. Checkout Session metadata must include `mandate_id` (or `mintry_mandate_id`). Amount from `amount_total` (cents) is applied via Python `/api/topup`.
+
+Requires `MINTRY_DASHBOARD_API_ORIGIN` + `MINTRY_DASHBOARD_API_TOKEN` when the ledger runs on a customer host.
+
 #### Explicitly off in production
 
 | Variable | Value |

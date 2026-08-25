@@ -177,6 +177,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_root()
         elif self.path == "/api/summary":
             self.serve_api()
+        elif self.path == "/api/notifications/settings":
+            self.serve_notification_settings()
         elif self.path.startswith("/v1beta/models/"):
             self.handle_proxy("GET")
         else:
@@ -254,10 +256,55 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not mandate_id:
                 self.send_json_response({"error": "Missing mandate 'id'"}, 400)
                 return
-                
             try:
                 wallet.exhaust_mandate(mandate_id)
                 self.send_json_response({"success": True}, 200)
+            except Exception as e:
+                self.send_json_response({"error": str(e)}, 500)
+
+        elif self.path == "/api/alerts/test":
+            from mintry.core.notifications import NotificationDispatcher
+            dispatcher = NotificationDispatcher()
+            test_payload = {
+                "event": payload.get("event", "test_alert"),
+                "mandate_id": payload.get("mandate_id", "test_agent"),
+                "threshold_pct": payload.get("threshold_pct", 80),
+                "budget_usd": payload.get("budget_usd", 100),
+                "spent_usd": payload.get("spent_usd", 85),
+                "utilization_pct": payload.get("utilization_pct", 85),
+                "message": payload.get("message", "Test notification"),
+            }
+            dispatcher.dispatch_async(test_payload)
+            self.send_json_response({"success": True, "channels": dispatcher.channels_configured()}, 200)
+
+        elif self.path == "/api/topup":
+            mandate_id = payload.get("mandate_id") or payload.get("id")
+            amount_usd = payload.get("amount_usd")
+            source = payload.get("source", "manual")
+            if not mandate_id or amount_usd is None:
+                self.send_json_response({"error": "Missing mandate_id or amount_usd"}, 400)
+                return
+            try:
+                from decimal import Decimal
+                amount = Decimal(str(amount_usd))
+                if amount <= 0:
+                    self.send_json_response({"error": "amount_usd must be positive"}, 400)
+                    return
+                existing = wallet.get_mandate(mandate_id)
+                if existing.get("status") == "unknown":
+                    wallet.create_mandate(mandate_id, float(amount))
+                wallet.add_funds(mandate_id, amount)
+                wallet.log_decision(
+                    mandate_id, "top_up", float(amount),
+                    f"Budget increased via {source}",
+                )
+                updated = wallet.get_mandate(mandate_id)
+                self.send_json_response({
+                    "success": True,
+                    "mandate_id": mandate_id,
+                    "budget_usd": updated.get("budget_usd"),
+                    "spent_usd": updated.get("spent_usd"),
+                }, 200)
             except Exception as e:
                 self.send_json_response({"error": str(e)}, 500)
         else:
@@ -269,6 +316,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def serve_notification_settings(self):
+        from mintry.core.notifications import NotificationDispatcher
+        dispatcher = NotificationDispatcher()
+        self.send_json_response({
+            "channels": dispatcher.channels_configured(),
+            "thresholds_pct": [80, 95, 100],
+            "digest_enabled": os.getenv("MINTRY_DIGEST_DISABLED", "").lower() not in ("1", "true", "yes"),
+        }, 200)
 
     def serve_api(self):
         if not self.db_path:
@@ -406,11 +462,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         import time
 
         if not cls.policy_cache:
+            from mintry.core.governance import control_plane_configured
+            configured = control_plane_configured()
             return {
                 "policy_version": None,
                 "last_synced_at": None,
                 "last_sync_error": None,
                 "control_plane_healthy": False,
+                "control_plane_configured": configured,
+                "local_mode": not configured,
             }
 
         sync_status = cls.policy_cache.get_sync_status()
@@ -426,6 +486,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "last_synced_at": sync_status.get("last_synced_at"),
             "last_sync_error": sync_status.get("last_sync_error"),
             "control_plane_healthy": bool(cache.get("healthy", False)),
+            "control_plane_configured": bool(cls.control_plane and cls.control_plane.url),
+            "local_mode": not bool(cls.control_plane and cls.control_plane.url),
         }
 
 def start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):

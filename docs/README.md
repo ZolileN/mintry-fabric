@@ -1,6 +1,6 @@
 # Mintry Fabric Documentation
 
-This documentation set is aligned to the current code in `src/mintry`.
+This documentation set is aligned to the current code in `src/mintry` (**v1.3.0**).
 
 > [!IMPORTANT]
 > **Read This First:** All development and feature design must strictly adhere to the [Six Architecture Principles](ARCHITECTURE.md). Features that violate these principles will be rejected.

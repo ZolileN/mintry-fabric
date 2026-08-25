@@ -54,7 +54,7 @@ def test_three_line_syntax(tmp_path, monkeypatch):
     with mintry.mandate("task:nightly_summarizer", cap=50.00) as m:
         assert m.task == "task:nightly_summarizer"
         assert m.max_usd == 50.00
-        assert m.id.startswith("mt_")
+        assert m.id == "task:nightly_summarizer"
         
         # Verify it was added to the DB
         data = mintry._global_engine.wallet.get_mandate(m.id)
@@ -81,7 +81,7 @@ def test_auto_init_on_mandate(tmp_path, monkeypatch):
             self.default_mandate_usd = default_mandate_usd
         def _dispatch_webhook(self, payload):
             pass
-        def shield(self, task, max_usd):
+        def shield(self, task, max_usd, stable_id=False):
             return (task, max_usd)
             
     class MockInterceptor:

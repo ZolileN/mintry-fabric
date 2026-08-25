@@ -15,11 +15,12 @@ from mintry.core.policy_sync import PolicyCache, PolicySyncWorker
 from mintry.core.control_plane import SupabaseControlPlaneClient
 from mintry.core.crypto import verify_policy_bundle_signature, normalize_pem
 from mintry.core.exceptions import MintryMandateExceeded
-from mintry.core.notifications import BudgetWatch
+from mintry.core.notifications import BudgetWatch, NotificationDispatcher
 from mintry.core.telemetry_batch import TelemetryBatcher
+from mintry.core.digest_worker import DigestWorker
 from mintry import telemetry as _telemetry
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 __all__ = [
     "init",
@@ -103,12 +104,17 @@ def init(
     engine.api_key = resolved_key
     interceptor = GlobalHTTPInterceptor(engine)
 
-    # Proactive budget notices. Evaluated by the metering worker and delivered on
+    # Proactive budget notices. Evaluated after metering and delivered on
     # a background thread — never on the allow/block path.
+    notify_dispatcher = NotificationDispatcher()
+    def _dispatch_notice(payload: dict) -> None:
+        engine._dispatch_webhook(payload)
+        notify_dispatcher.dispatch_async(payload)
+
     engine.budget_watch = BudgetWatch(
         wallet,
         thresholds=budget_alert_thresholds,
-        dispatch=engine._dispatch_webhook,
+        dispatch=_dispatch_notice,
     )
 
     # Prefer explicit arg, then documented env var
@@ -143,6 +149,13 @@ def init(
             return False
 
     verify_fn = verify_bundle if resolved_public_key else None
+
+    if not resolved_public_key and control_plane_url:
+        import logging
+        logging.getLogger(__name__).warning(
+            "MINTRY_POLICY_PUBLIC_KEY not set — policy signatures will not be verified. "
+            "Set the public key in production."
+        )
 
     # Initialize policy sync worker (Principle 3: Enforce locally, always)
     # This polls for new policies from the control plane in the background
@@ -192,6 +205,14 @@ def init(
         telemetry_batcher.start()
     engine.telemetry_batcher = telemetry_batcher
 
+    # Optional digest notifications (async; MINTRY_DIGEST_DISABLED=1 to skip)
+    digest_worker = None
+    if os.environ.get("MINTRY_DIGEST_DISABLED", "").lower() not in ("1", "true", "yes"):
+        digest_interval = float(os.environ.get("MINTRY_DIGEST_INTERVAL_SEC", "604800"))
+        digest_worker = DigestWorker(wallet, NotificationDispatcher(), interval_sec=digest_interval)
+        digest_worker.start()
+    engine.digest_worker = digest_worker
+
     # Install the global hooks
     interceptor.install()
 
@@ -216,6 +237,9 @@ def close() -> None:
     batcher = getattr(_global_engine, "telemetry_batcher", None)
     if batcher is not None:
         batcher.stop()
+    digest = getattr(_global_engine, "digest_worker", None)
+    if digest is not None:
+        digest.stop()
     worker = getattr(_global_engine, "policy_sync_worker", None)
     if worker is not None:
         worker.stop()
@@ -249,4 +273,4 @@ def mandate(task: str, cap: float):
         # Auto-initialize if the env var is available
         init()
 
-    return _global_engine.shield(task, max_usd=cap)
+    return _global_engine.shield(task, max_usd=cap, stable_id=True)
