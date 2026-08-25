@@ -219,6 +219,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    fetch('/api/summary')
       .then(res => res.ok ? res.json() : Promise.reject('Not OK'))
       .then(json => setData(json))
       .catch(err => console.error("Dashboard API sync failed:", err));
