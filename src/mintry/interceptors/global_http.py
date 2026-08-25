@@ -73,8 +73,29 @@ def _process_metering_task(engine, request_info, response_bytes):
     model = data.get("model") or _extract_model_from_info(request_info)
     prompt_tokens, completion_tokens = _extract_tokens(data)
     actual_cost = calculate_cost(model, prompt_tokens, completion_tokens)
-    engine.wallet.record_usage(request_info["mandate_id"], actual_cost)
+    mandate_id = request_info["mandate_id"]
+    engine.wallet.record_usage(mandate_id, actual_cost)
     _telemetry.record_proxy_cost(actual_cost)
+    _evaluate_budget_notices(engine, mandate_id)
+
+
+def _evaluate_budget_notices(engine, mandate_id):
+    """Check the freshly updated mandate for a threshold crossing.
+
+    Runs on the metering worker, after the response has already been returned to
+    the caller, so a notice never delays a request.
+    """
+    watch = getattr(engine, "budget_watch", None)
+    if watch is None:
+        return
+    try:
+        budget = engine.effective_budget(mandate_id)
+    except Exception:
+        budget = None
+    try:
+        watch.evaluate(mandate_id, budget_usd=budget)
+    except Exception:
+        pass
 
 # List of known LLM API host patterns
 _LLM_HOSTS = [

@@ -1,6 +1,6 @@
 import os
 from contextlib import contextmanager
-from typing import Optional
+from typing import Iterable, Optional
 
 try:
     from dotenv import load_dotenv
@@ -15,6 +15,7 @@ from mintry.core.policy_sync import PolicyCache, PolicySyncWorker
 from mintry.core.control_plane import SupabaseControlPlaneClient
 from mintry.core.crypto import verify_policy_bundle_signature, normalize_pem
 from mintry.core.exceptions import MintryMandateExceeded
+from mintry.core.notifications import BudgetWatch
 from mintry.core.telemetry_batch import TelemetryBatcher
 from mintry import telemetry as _telemetry
 
@@ -42,6 +43,8 @@ def init(
     control_plane_key: Optional[str] = None,
     control_plane_public_key: Optional[str] = None,
     policy_sync_interval: float = 20.0,
+    default_mandate_usd: Optional[float] = None,
+    budget_alert_thresholds: Optional[Iterable[float]] = None,
 ) -> PolicyEngine:
     """
     Initializes the Mintry Logic Fabric globally.
@@ -58,6 +61,15 @@ def init(
     - control_plane_key: Supabase API key (MINTRY_CONTROL_PLANE_KEY env var)
     - control_plane_public_key: ES256 public key for signature verification
     - policy_sync_interval: Polling interval in seconds (default: 20)
+
+    Unattended operation (optional):
+    - default_mandate_usd: cap applied to an agent that has never been budgeted,
+      so a new service is governed on its first request instead of being blocked
+      until someone opens the dashboard (MINTRY_DEFAULT_MANDATE_USD env var). A
+      signed ``__default__`` policy rule overrides this. Unset means unknown
+      agents are blocked, as before.
+    - budget_alert_thresholds: utilization points that trigger a proactive notice,
+      e.g. ``[0.5, 0.8, 0.95]`` (MINTRY_BUDGET_ALERT_THRESHOLDS env var).
     """
     global _global_engine, _global_db_path
 
@@ -83,9 +95,21 @@ def init(
         close()
 
     wallet = MintryWallet(db_path=db_path)
-    engine = PolicyEngine(wallet, webhook_url=webhook_url)
+    engine = PolicyEngine(
+        wallet,
+        webhook_url=webhook_url,
+        default_mandate_usd=default_mandate_usd,
+    )
     engine.api_key = resolved_key
     interceptor = GlobalHTTPInterceptor(engine)
+
+    # Proactive budget notices. Evaluated by the metering worker and delivered on
+    # a background thread — never on the allow/block path.
+    engine.budget_watch = BudgetWatch(
+        wallet,
+        thresholds=budget_alert_thresholds,
+        dispatch=engine._dispatch_webhook,
+    )
 
     # Prefer explicit arg, then documented env var
     resolved_public_key = (
