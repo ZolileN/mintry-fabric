@@ -120,6 +120,13 @@ def init(
 
     verify_fn = verify_bundle if resolved_public_key else None
 
+    if not resolved_public_key and control_plane_url:
+        import logging
+        logging.getLogger(__name__).warning(
+            "MINTRY_POLICY_PUBLIC_KEY not set — policy signatures will not be verified. "
+            "Set the public key in production."
+        )
+
     # Initialize policy sync worker (Principle 3: Enforce locally, always)
     # This polls for new policies from the control plane in the background
     policy_cache = PolicyCache(wallet=wallet, verify_fn=verify_fn)
@@ -225,4 +232,4 @@ def mandate(task: str, cap: float):
         # Auto-initialize if the env var is available
         init()
 
-    return _global_engine.shield(task, max_usd=cap)
+    return _global_engine.shield(task, max_usd=cap, stable_id=True)

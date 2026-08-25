@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Optional, Any
 
+from mintry.core.mandate_context import set_active_mandate_id, clear_active_mandate_id
+from mintry.core.alert_monitor import BudgetAlertMonitor
+
 
 class Mandate:
     """Represents an active budget mandate for a scoped task."""
@@ -29,6 +32,36 @@ class PolicyEngine:
         self.wallet = wallet
         self.api_key = None
         self.webhook_url = webhook_url or os.environ.get("MINTRY_WEBHOOK_URL")
+        self.alert_monitor = BudgetAlertMonitor(self)
+
+    def _record_telemetry(
+        self,
+        mandate_id: str,
+        action: str,
+        amount: float,
+        details: str,
+    ) -> None:
+        """Queue telemetry for async control-plane upload (never blocks authorize)."""
+        batcher = getattr(self, "telemetry_batcher", None)
+        if batcher is None:
+            return
+        agent_id = getattr(self, "agent_id", None)
+        batcher.record_decision(
+            mandate_id,
+            action,
+            amount,
+            details,
+            agent_id=agent_id,
+        )
+
+    def _after_spend_update(self, mandate_id: str) -> None:
+        """Async threshold checks after ledger spend changes."""
+        summary = self.get_budget_summary(mandate_id)
+        self.alert_monitor.check_async(
+            mandate_id,
+            float(summary.get("budget_usd", 0.0) or 0.0),
+            float(summary.get("spent_usd", 0.0) or 0.0),
+        )
 
     def _dispatch_webhook(self, payload: dict):
         """Dispatches a webhook POST request asynchronously in a background thread."""
@@ -95,6 +128,7 @@ class PolicyEngine:
                 mandate_id, "block", 0.0,
                 "Mandate expired — request rejected"
             )
+            self._record_telemetry(mandate_id, "block", 0.0, "Mandate expired — request rejected")
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "expired",
@@ -109,6 +143,7 @@ class PolicyEngine:
                 mandate_id, "block", 0.0,
                 "Blocked by central policy (allow=false)"
             )
+            self._record_telemetry(mandate_id, "block", 0.0, "Blocked by central policy (allow=false)")
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "policy_deny",
@@ -123,6 +158,10 @@ class PolicyEngine:
             self.wallet.log_decision(
                 mandate_id, "block", 0.0,
                 f"Budget exhausted (${spent:.4f} / ${budget:.4f})"
+            )
+            self._record_telemetry(
+                mandate_id, "block", 0.0,
+                f"Budget exhausted (${spent:.4f} / ${budget:.4f})",
             )
             self._dispatch_webhook({
                 "event": "authorization_failed",
@@ -139,6 +178,10 @@ class PolicyEngine:
                 mandate_id, "block", round(remaining, 4),
                 f"Insufficient headroom (${remaining:.4f} remaining)"
             )
+            self._record_telemetry(
+                mandate_id, "block", round(remaining, 4),
+                f"Insufficient headroom (${remaining:.4f} remaining)",
+            )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "budget_exhausted",
@@ -154,6 +197,10 @@ class PolicyEngine:
                 mandate_id, "block", 0.0,
                 "Insufficient headroom (concurrent reservation)"
             )
+            self._record_telemetry(
+                mandate_id, "block", 0.0,
+                "Insufficient headroom (concurrent reservation)",
+            )
             self._dispatch_webhook({
                 "event": "authorization_failed",
                 "reason": "budget_exhausted",
@@ -167,6 +214,7 @@ class PolicyEngine:
         if deduct:
             self.wallet.record_usage(mandate_id, 0.002)
 
+        self._record_telemetry(mandate_id, "allow", 0.0, "Request authorized")
         return True
 
     def get_budget_summary(self, mandate_id: str) -> dict:
@@ -191,17 +239,35 @@ class PolicyEngine:
         }
 
     @contextmanager
-    def shield(self, task: str, max_usd: Optional[float] = None, expires_at: Optional[datetime] = None):
+    def shield(
+        self,
+        task: str,
+        max_usd: Optional[float] = None,
+        expires_at: Optional[datetime] = None,
+        stable_id: bool = False,
+    ):
         """
         Context manager that creates or resolves a scoped mandate for a task.
 
         If max_usd is None, it resolves against pre-allocated dashboard mandates.
         On exit of a standard scoped mandate, marks it as exhausted.
+
+        When stable_id=True (used by mintry.mandate()), the task name is the
+        ledger mandate id and attribution is injected via ContextVar for nested LLM calls.
         """
         is_shared = False
         existing = self.wallet.get_mandate(task)
-        
-        if max_usd is None:
+
+        if max_usd is not None and stable_id:
+            mandate_id = task
+            if existing.get("status") == "unknown":
+                self.wallet.create_mandate(mandate_id, float(max_usd), expires_at=expires_at)
+            else:
+                self.wallet.update_mandate(
+                    mandate_id, float(max_usd), expires_at=expires_at, status="active",
+                )
+            is_shared = True
+        elif max_usd is None:
             if existing.get("status") != "unknown":
                 mandate_id = task
                 max_usd = existing.get("budget_usd", 0.0)
@@ -218,9 +284,11 @@ class PolicyEngine:
 
         mandate = Mandate(mandate_id=mandate_id, task=task, max_usd=float(max_usd))
 
+        set_active_mandate_id(mandate_id)
         try:
             yield mandate
         finally:
+            clear_active_mandate_id()
             if not is_shared:
                 self.wallet.exhaust_mandate(mandate_id)
                 mandate_info = self.wallet.get_mandate(mandate_id)

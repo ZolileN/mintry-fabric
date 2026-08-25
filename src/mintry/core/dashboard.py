@@ -391,11 +391,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         import time
 
         if not cls.policy_cache:
+            from mintry.core.governance import control_plane_configured
+            configured = control_plane_configured()
             return {
                 "policy_version": None,
                 "last_synced_at": None,
                 "last_sync_error": None,
                 "control_plane_healthy": False,
+                "control_plane_configured": configured,
+                "local_mode": not configured,
             }
 
         sync_status = cls.policy_cache.get_sync_status()
@@ -411,6 +415,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "last_synced_at": sync_status.get("last_synced_at"),
             "last_sync_error": sync_status.get("last_sync_error"),
             "control_plane_healthy": bool(cache.get("healthy", False)),
+            "control_plane_configured": bool(cls.control_plane and cls.control_plane.url),
+            "local_mode": not bool(cls.control_plane and cls.control_plane.url),
         }
 
 def start_dashboard(db_path: str, host: str = "127.0.0.1", port: int = 8000):

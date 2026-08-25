@@ -101,6 +101,8 @@ interface PolicySync {
   last_synced_at: string | null;
   last_sync_error: string | null;
   control_plane_healthy: boolean;
+  control_plane_configured?: boolean;
+  local_mode?: boolean;
 }
 interface Governance {
   control_plane_configured: boolean;
@@ -146,6 +148,12 @@ export default function Dashboard() {
   });
 
   const [formState, setFormState] = useState({ id: '', budget: '', expiry: '' });
+  const [simpleBudgetForm, setSimpleBudgetForm] = useState({
+    agentId: '',
+    monthlyCap: '',
+    allow: true,
+  });
+  const [showAdvancedPolicy, setShowAdvancedPolicy] = useState(false);
   const [feedback, setFeedback] = useState({ text: '', type: '' });
   const [policyForm, setPolicyForm] = useState({
     agentId: '',
@@ -263,7 +271,7 @@ export default function Dashboard() {
     } catch (err: unknown) {
       setPolicyFeedback({ text: err instanceof Error ? err.message : String(err), type: 'error' });
     }
-    setTimeout(() => setPolicyFeedback({ text: '', type: '' }), 4000);
+    setTimeout(() => setPolicyFeedback({ text: '', type: '' }), 12000);
   };
 
   const handleFleetPartition = async (e: React.FormEvent) => {
@@ -311,7 +319,7 @@ export default function Dashboard() {
         type: 'error',
       });
     }
-    setTimeout(() => setFleetFeedback({ text: '', type: '' }), 6000);
+    setTimeout(() => setFleetFeedback({ text: '', type: '' }), 12000);
   };
 
   const handleOrgCompile = async (e: React.FormEvent) => {
@@ -351,7 +359,7 @@ export default function Dashboard() {
         type: 'error',
       });
     }
-    setTimeout(() => setOrgFeedback({ text: '', type: '' }), 6000);
+    setTimeout(() => setOrgFeedback({ text: '', type: '' }), 12000);
   };
 
   const handleSecretAliases = async (e: React.FormEvent) => {
@@ -382,7 +390,7 @@ export default function Dashboard() {
         type: 'error',
       });
     }
-    setTimeout(() => setSecretFeedback({ text: '', type: '' }), 6000);
+    setTimeout(() => setSecretFeedback({ text: '', type: '' }), 12000);
   };
 
   const revokeMandate = async (id: string) => {
@@ -431,10 +439,43 @@ export default function Dashboard() {
     return Array.from(map.values()).sort((a, b) => a.agent_id.localeCompare(b.agent_id));
   })();
 
-  const showFeedback = (text: string, type: string) => {
+  const showFeedback = (text: string, type: string, persistent = false) => {
     setFeedback({ text, type });
-    if (text) {
-      setTimeout(() => setFeedback({ text: '', type: '' }), 4000);
+    if (text && !persistent) {
+      setTimeout(() => setFeedback({ text: '', type: '' }), 12000);
+    }
+  };
+
+  const handleSimpleBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const agentId = simpleBudgetForm.agentId.trim();
+    const cap = parseFloat(simpleBudgetForm.monthlyCap);
+    if (!agentId || !Number.isFinite(cap) || cap <= 0) {
+      setPolicyFeedback({ text: 'Enter an agent name and a positive monthly cap.', type: 'error' });
+      return;
+    }
+    const mandates = {
+      [agentId]: { max_usd: cap, allow: simpleBudgetForm.allow },
+    };
+    try {
+      const res = await fetch('/api/policies/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, mandates }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to set budget');
+      setPolicyFeedback({
+        text: `Budget set for ${agentId}: $${cap.toFixed(2)}/month (policy v${json.version})`,
+        type: 'success',
+      });
+      setSimpleBudgetForm({ agentId: '', monthlyCap: '', allow: true });
+      fetchSummary();
+    } catch (err: unknown) {
+      setPolicyFeedback({
+        text: err instanceof Error ? err.message : String(err),
+        type: 'error',
+      });
     }
   };
 
@@ -509,6 +550,8 @@ export default function Dashboard() {
   const activeAgents = data.stats.active_agents ?? data.mandates.filter(m => m.status === 'active').length;
   const totalAgents = data.mandates.length;
   const localGovernance = data.governance?.local_governance ?? true;
+  const localMode = data.policy_sync?.local_mode ?? !data.governance?.control_plane_configured;
+  const controlPlaneHealthy = data.policy_sync?.control_plane_healthy ?? false;
 
   return (
     <>
@@ -527,11 +570,30 @@ export default function Dashboard() {
 
       <div className="dashboard-container">
 
-        <div className="section-label mint">{"// 01 — Governance indicators"}</div>
+        {data.mandates.length === 0 && (
+          <div className="bento-card col-12" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
+            <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>Welcome — set up in one step</h2>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 0.75rem' }}>
+              Add Mintry once in your app, then set a monthly cap below. Spend is enforced locally — no per-request headers required when using <code>mintry.mandate()</code>.
+            </p>
+            <pre style={{
+              fontFamily: 'var(--font-mono)', fontSize: '11px', background: 'var(--glass)',
+              padding: '0.75rem', borderRadius: '6px', overflow: 'auto', margin: 0,
+            }}>
+{`import mintry
+mintry.init(api_key="mk_…", db_path="~/.mintry/vouchers.db")
+
+with mintry.mandate("my_agent", cap=50.0):
+    client.chat.completions.create(...)  # attributed automatically`}
+            </pre>
+          </div>
+        )}
+
+        <div className="section-label mint">{"// 01 — Spend overview"}</div>
 
         <div className="kpi-grid">
             <div className="bento-card kpi-card kpi-card-wide">
-                <div className="kpi-label">Protected Spend</div>
+                <div className="kpi-label">Tracked Spend</div>
                 <div className="kpi-value mint">${(data.stats.protected_spend ?? data.stats.total_spent ?? 0).toFixed(4)}</div>
             </div>
             <div className="bento-card kpi-card kpi-card-wide">
@@ -560,12 +622,12 @@ export default function Dashboard() {
             </div>
         </div>
 
-        <div className="section-label mint">{"// 02 — Live audit feed"}</div>
+        <div className="section-label mint">{"// 02 — Activity feed"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-12">
                 <div className="panel-header">
-                    <h2>Live Audit Feed</h2>
+                    <h2>Activity Feed</h2>
                     <span style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)'}}>ALLOW · BLOCK · SPEND</span>
                 </div>
                 <div className="event-list" style={{maxHeight: '320px'}}>
@@ -591,12 +653,12 @@ export default function Dashboard() {
             </div>
         </div>
 
-        <div className="section-label">{"// 03 — Real-time telemetry"}</div>
+        <div className="section-label">{"// 03 — Spend charts"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-8">
                 <div className="panel-header">
-                    <h2>Fiscal Consumption Timeline</h2>
+                    <h2>Spend Over Time</h2>
                 </div>
                 <div className="chart-container">
                   {slicedLabels.length > 0 ? (
@@ -634,17 +696,21 @@ export default function Dashboard() {
             </div>
         </div>
 
-        {/* 05 — Mandate Synchronization */}
-        <div className="section-label mint">{"// 05 — Mandate Synchronization"}</div>
+        {/* 04 — Sync status */}
+        <div className="section-label mint">{"// 04 — Policy sync"}</div>
         <div className="bento-grid" style={{marginBottom: '1.5rem'}}>
           <div className="bento-card col-12">
             <div className="panel-header">
-              <h2>Control Plane Sync Status</h2>
+              <h2>Sync Status</h2>
+              {localMode && (
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--mint)'}}>
+                  local mode — budgets apply from this host
+                </span>
+              )}
             </div>
             <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'1.5rem', padding:'0.5rem 0'}}>
-              {/* policy_version */}
               <div style={{display:'flex', flexDirection:'column', gap:'0.4rem'}}>
-                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>mandate_revision</span>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>policy version</span>
                 <span style={{fontFamily:'var(--font-mono)', fontSize:'1.6rem', fontWeight:700, color: data.policy_sync?.policy_version != null ? 'var(--mint)' : 'var(--text-tertiary)'}}>
                   {data.policy_sync?.policy_version != null ? `v${data.policy_sync.policy_version}` : '—'}
                 </span>
@@ -663,32 +729,36 @@ export default function Dashboard() {
                   </span>
                 )}
               </div>
-              {/* control_plane_healthy */}
               <div style={{display:'flex', flexDirection:'column', gap:'0.4rem'}}>
-                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>control_plane_healthy</span>
+                <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--text-tertiary)', textTransform:'uppercase', letterSpacing:'0.08em'}}>sync health</span>
                 <div style={{display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'0.2rem'}}>
                   <div style={{
                     width:'10px', height:'10px', borderRadius:'50%',
-                    background: data.policy_sync?.control_plane_healthy ? '#10B981' : '#EF4444',
-                    boxShadow: data.policy_sync?.control_plane_healthy ? '0 0 8px #10B981' : '0 0 8px #EF4444',
+                    background: localMode ? '#10B981' : (controlPlaneHealthy ? '#10B981' : '#EF4444'),
+                    boxShadow: localMode ? '0 0 8px #10B981' : (controlPlaneHealthy ? '0 0 8px #10B981' : '0 0 8px #EF4444'),
                     flexShrink: 0,
                   }} />
                   <span style={{fontFamily:'var(--font-mono)', fontSize:'13px', fontWeight:600,
-                    color: data.policy_sync?.control_plane_healthy ? 'var(--mint)' : '#EF4444'}}>
-                    {data.policy_sync?.control_plane_healthy ? 'true' : 'false'}
+                    color: localMode ? 'var(--mint)' : (controlPlaneHealthy ? 'var(--mint)' : '#EF4444')}}>
+                    {localMode ? 'local (healthy)' : (controlPlaneHealthy ? 'connected' : 'unreachable')}
                   </span>
                 </div>
+                {localMode && (
+                  <span style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', marginTop:'0.2rem'}}>
+                    No cloud control plane configured — enforcement uses this machine&apos;s ledger and signed policies when available.
+                  </span>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="section-label">{"// 04 — Agent ledger & administration"}</div>
+        <div className="section-label">{"// 05 — Agents & budgets"}</div>
 
         <div className="bento-grid">
             <div className="bento-card col-8">
                 <div className="panel-header">
-                    <h2>Agent Ledger</h2>
+                    <h2>Agent Budgets</h2>
                     <span style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)'}}>
                       {agentGroups.length} agent{agentGroups.length === 1 ? '' : 's'}
                     </span>
@@ -784,7 +854,7 @@ export default function Dashboard() {
             </div>
             <div className="bento-card col-4">
                 <div className="panel-header">
-                    <h2>Sign &amp; Push Policy</h2>
+                    <h2>Set Agent Budget</h2>
                     <span style={{fontFamily:'var(--font-mono)', fontSize:'10px', color:'var(--mint)'}}>
                       {data.governance?.authoring_mode === 'central_sign_and_push'
                         ? 'source of truth'
@@ -794,20 +864,47 @@ export default function Dashboard() {
                     </span>
                 </div>
                 <p style={{fontFamily:'var(--font-mono)', fontSize:'11px', color:'var(--text-tertiary)', margin:'0 0 0.75rem'}}>
-                  Author a signed, versioned policy. Agents poll and enforce locally — no control-plane call on allow/block.
+                  Set a monthly cap — signed policies sync to agents in the background. No per-request work for your team.
                 </p>
-                <form onSubmit={handlePushPolicy} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                <form onSubmit={handleSimpleBudget} style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="simple-agent-id">Agent name</label>
+                        <input type="text" id="simple-agent-id" required placeholder="e.g. customer_support_agent" className="form-input" value={simpleBudgetForm.agentId} onChange={e => setSimpleBudgetForm({...simpleBudgetForm, agentId: e.target.value})} />
+                    </div>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
+                        <label className="kpi-label" htmlFor="simple-monthly-cap">Monthly cap (USD)</label>
+                        <input type="number" id="simple-monthly-cap" required step="0.01" min="0.01" placeholder="e.g. 50.00" className="form-input" value={simpleBudgetForm.monthlyCap} onChange={e => setSimpleBudgetForm({...simpleBudgetForm, monthlyCap: e.target.value})} />
+                    </div>
+                    <label style={{display:'flex', alignItems:'center', gap:'0.5rem', fontFamily:'var(--font-mono)', fontSize:'12px'}}>
+                      <input type="checkbox" checked={simpleBudgetForm.allow} onChange={e => setSimpleBudgetForm({...simpleBudgetForm, allow: e.target.checked})} />
+                      Allow requests (block when unchecked)
+                    </label>
+                    <button type="submit" className="btn-submit" style={{background: 'var(--mint)', color: '#050505'}}>Set budget &amp; push policy</button>
+                </form>
+
+                <button type="button" className="btn" style={{ marginTop: '1rem', fontSize: '11px' }} onClick={() => setShowAdvancedPolicy(v => !v)}>
+                  {showAdvancedPolicy ? 'Hide advanced JSON' : 'Advanced JSON editor'}
+                </button>
+
+                {showAdvancedPolicy && (
+                <form onSubmit={handlePushPolicy} style={{display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem'}}>
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
                         <label className="kpi-label" htmlFor="policy-agent-id">Agent ID</label>
                         <input type="text" id="policy-agent-id" required placeholder="e.g. customer_support_agent" className="form-input" value={policyForm.agentId} onChange={e => setPolicyForm({...policyForm, agentId: e.target.value})} />
                     </div>
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.3rem'}}>
-                        <label className="kpi-label" htmlFor="policy-json">Mandates JSON</label>
+                        <label className="kpi-label" htmlFor="policy-json">Budget rules JSON</label>
                         <textarea id="policy-json" required rows={5} placeholder='{"customer_support_agent": {"max_usd": 50.0, "allow": true}}' className="form-input" style={{fontFamily: 'var(--font-mono)', fontSize: '11px', resize: 'vertical'}} value={policyForm.policyJson} onChange={e => setPolicyForm({...policyForm, policyJson: e.target.value})} />
                     </div>
                     <button type="submit" className="btn-submit" style={{background: 'var(--blue)'}}>Sign &amp; Push vNext</button>
-                    <div className={`feedback-message ${policyFeedback.type}`}>{policyFeedback.text}</div>
                 </form>
+                )}
+                {policyFeedback.text && (
+                  <div className={`feedback-message ${policyFeedback.type}`} style={{ marginTop: '0.75rem' }}>
+                    {policyFeedback.text}
+                    <button type="button" className="btn" style={{ marginLeft: '0.5rem', fontSize: '10px' }} onClick={() => setPolicyFeedback({ text: '', type: '' })}>Dismiss</button>
+                  </div>
+                )}
 
                 <div className="panel-header" style={{ marginTop: '2rem' }}>
                     <h2>Fleet Partition (Option A)</h2>
